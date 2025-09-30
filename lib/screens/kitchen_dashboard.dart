@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import 'dart:async';
 import '../models/order.dart';
 import '../services/order_service.dart';
-// import '../services/audio_service.dart'; // ❌ HAPUS
+import '../services/socket_service.dart';
 import '../widgets/order_column.dart';
 import '../config/app_theme.dart';
 import 'package:flutter/foundation.dart';
@@ -20,6 +20,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   List<Order> queue = [];
   List<Order> preparing = [];
   List<Order> done = [];
+  List<Order> reservations = [];
   String search = '';
   bool _isLoading = false;
   String? _errorMessage;
@@ -35,6 +36,13 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     super.initState();
     _loadOrders();
     _initializeTimers();
+
+    SocketService.connect(
+      outletId: "outlet-1",
+      onNewOrder: (newOrder) {
+        _refreshOrders();
+      },
+    );
   }
 
   void _initializeTimers() {
@@ -56,7 +64,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
         final alreadyPlayed = _alertPlayedMap[order.orderId] ?? false;
         if (!alreadyPlayed) {
           _alertPlayedMap[order.orderId ?? ""] = true;
-          // AudioService.playAlert(); // ❌ HAPUS
         }
       }
     }
@@ -66,6 +73,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   void dispose() {
     _mainTimer.cancel();
     _refreshTimer.cancel();
+    SocketService.disconnect();
     super.dispose();
   }
 
@@ -77,7 +85,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
     try {
       final ordersMap = await OrderService.refreshOrders();
-      _mergeOrdersWithAlertState(ordersMap);
+      await _mergeOrdersWithAlertState(ordersMap);
       setState(() {
         _isLoading = false;
       });
@@ -92,7 +100,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   Future<void> _refreshOrders() async {
     try {
       final ordersMap = await OrderService.refreshOrders();
-      _mergeOrdersWithAlertState(ordersMap);
+      await _mergeOrdersWithAlertState(ordersMap);
     } catch (e) {
       if (kDebugMode) {
         print('Error refreshing orders: $e');
@@ -100,12 +108,26 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     }
   }
 
-  void _mergeOrdersWithAlertState(Map<String, List<Order>> ordersMap) {
+  Future<void> _mergeOrdersWithAlertState(Map<String, List<Order>> ordersMap) async {
     final newQueue = ordersMap['pending'] ?? [];
     final newPreparing = ordersMap['preparing'] ?? [];
     final newDone = ordersMap['completed'] ?? [];
+    final newReservations = ordersMap['reservations'] ?? [];
 
-    for (var o in newQueue) {
+    // Auto-konfirmasi semua order di queue ke preparing via API
+    for (var order in newQueue) {
+      if (order.orderId != null) {
+        await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
+        if (kDebugMode) {
+          print('✅ Auto-confirmed order ${order.orderId} to OnProcess');
+        }
+      }
+    }
+
+    // Gabungkan queue langsung ke preparing
+    final allPreparing = [...newPreparing, ...newQueue];
+
+    for (var o in allPreparing) {
       if (_alertPlayedMap.containsKey(o.orderId)) {
       } else {
         _alertPlayedMap[o.orderId ?? ""] = false;
@@ -113,36 +135,33 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     }
 
     setState(() {
-      queue = newQueue;
-      preparing = newPreparing;
+      queue = []; // Kosongkan queue
+      preparing = allPreparing; // Semua masuk preparing
       done = newDone;
+      reservations = newReservations;
     });
   }
 
   void _confirmOrder(Order order) async {
     setState(() {
       queue.remove(order);
-      order.startTimer();
       preparing.add(order);
     });
 
     if (order.orderId != null) {
       await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
     }
-    // AudioService.playLogin(); // ❌ HAPUS
   }
 
   void _completeOrder(Order order) async {
     setState(() {
       preparing.remove(order);
-      order.stopTimer();
       done.add(order);
     });
 
     if (order.orderId != null) {
       await OrderService.updateOrderStatus(order.orderId!, 'Completed');
     }
-    // AudioService.playDing(); // ❌ HAPUS
     _showOrderCompleteDialog(order);
   }
 
@@ -165,7 +184,9 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
   void _addTimeToOrder(Order order, int minutes) {
     setState(() {
-      order.remaining += Duration(minutes: minutes);
+      if (order.updatedAt != null) {
+        order.updatedAt = order.updatedAt!.add(Duration(minutes: minutes));
+      }
     });
   }
 
@@ -213,26 +234,33 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   Widget _buildDesktopLayout() {
     return Row(
       children: [
-        OrderColumn(
-          title: 'Antrian',
-          orders: queue,
-          onAction: _confirmOrder,
-          searchQuery: search,
+        Expanded(
+          child: OrderColumn(
+            title: 'Penyiapan',
+            orders: preparing,
+            onAction: _completeOrder,
+            searchQuery: search,
+            showTimer: true,
+            onAddTime: _addTimeToOrder,
+          ),
         ),
-        OrderColumn(
-          title: 'Penyiapan',
-          orders: preparing,
-          onAction: _completeOrder,
-          searchQuery: search,
-          showTimer: true,
-          onAddTime: _addTimeToOrder,
+        Expanded(
+          child: OrderColumn(
+            title: 'Selesai',
+            orders: done,
+            onAction: (_) {},
+            searchQuery: search,
+            isFinished: true,
+          ),
         ),
-        OrderColumn(
-          title: 'Selesai',
-          orders: done,
-          onAction: (_) {},
-          searchQuery: search,
-          isFinished: true,
+        Expanded(
+          child: OrderColumn(
+            title: 'Reservasi',
+            orders: reservations,
+            onAction: (_) {},
+            searchQuery: search,
+            isReservation: true,
+          ),
         ),
       ],
     );
@@ -250,21 +278,15 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
               labelColor: Colors.white,
               unselectedLabelColor: Colors.white70,
               tabs: [
-                Tab(text: 'Antrian'),
                 Tab(text: 'Penyiapan'),
                 Tab(text: 'Selesai'),
+                Tab(text: 'Reservasi'),
               ],
             ),
           ),
           Expanded(
             child: TabBarView(
               children: [
-                OrderColumn(
-                  title: 'Antrian',
-                  orders: queue,
-                  onAction: _confirmOrder,
-                  searchQuery: search,
-                ),
                 OrderColumn(
                   title: 'Penyiapan',
                   orders: preparing,
@@ -279,6 +301,13 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                   onAction: (_) {},
                   searchQuery: search,
                   isFinished: true,
+                ),
+                OrderColumn(
+                  title: 'Reservasi',
+                  orders: reservations,
+                  onAction: (_) {},
+                  searchQuery: search,
+                  isReservation: true,
                 ),
               ],
             ),
