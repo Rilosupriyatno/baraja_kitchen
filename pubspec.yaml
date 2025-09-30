@@ -71,9 +71,8 @@ flutter:
     - assets/products/latte_caramel.jpg
     - assets/products/espresso_double.jpg
     - assets/products/capucino.jpg
-    - assets/audio/ding.mp3
-    - assets/audio/login.mp3
-    - assets/audio/alert.mp3
+    - assets/sounds/alert.mp3      # Suara untuk order penyiapan
+    - assets/sounds/ding.mp3
     - .env
   # assets:
   #   - images/a_dot_burr.jpeg

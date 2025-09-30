@@ -5,6 +5,7 @@ import 'dart:async';
 import '../models/order.dart';
 import '../services/order_service.dart';
 import '../services/socket_service.dart';
+import '../services/notification_service.dart'; // ✅ Import notification service
 import '../widgets/order_column.dart';
 import '../config/app_theme.dart';
 import 'package:flutter/foundation.dart';
@@ -30,6 +31,12 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   DateTime _currentTime = DateTime.now();
 
   final Map<String, bool> _alertPlayedMap = {};
+
+  // ✅ Tambahkan notification service
+  final NotificationService _notificationService = NotificationService();
+
+  // ✅ Track order IDs yang sudah ada sebelumnya
+  final Set<String> _existingOrderIds = <String>{};
 
   @override
   void initState() {
@@ -74,6 +81,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     _mainTimer.cancel();
     _refreshTimer.cancel();
     SocketService.disconnect();
+    _notificationService.dispose(); // ✅ Dispose notification service
     super.dispose();
   }
 
@@ -85,7 +93,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
     try {
       final ordersMap = await OrderService.refreshOrders();
-      await _mergeOrdersWithAlertState(ordersMap);
+      await _mergeOrdersWithAlertState(ordersMap, isInitialLoad: true);
       setState(() {
         _isLoading = false;
       });
@@ -108,7 +116,10 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     }
   }
 
-  Future<void> _mergeOrdersWithAlertState(Map<String, List<Order>> ordersMap) async {
+  Future<void> _mergeOrdersWithAlertState(
+      Map<String, List<Order>> ordersMap, {
+        bool isInitialLoad = false,
+      }) async {
     final newQueue = ordersMap['pending'] ?? [];
     final newPreparing = ordersMap['preparing'] ?? [];
     final newDone = ordersMap['completed'] ?? [];
@@ -127,6 +138,45 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     // Gabungkan queue langsung ke preparing
     final allPreparing = [...newPreparing, ...newQueue];
 
+    // ✅ Deteksi order baru dan mainkan notifikasi
+    if (!isInitialLoad) {
+      // Cek order baru di preparing
+      for (var order in allPreparing) {
+        if (order.orderId != null && !_existingOrderIds.contains(order.orderId)) {
+          if (kDebugMode) {
+            print('🆕 Order baru terdeteksi di Penyiapan: ${order.orderId}');
+          }
+          // Mainkan notifikasi untuk order penyiapan
+          await _notificationService.playNewOrderNotification(
+            order.orderId!,
+            soundPath: 'sounds/alert.mp3', // ✅ Ganti dengan path sound Anda
+          );
+        }
+      }
+
+      // Cek order baru di reservasi
+      for (var order in newReservations) {
+        if (order.orderId != null && !_existingOrderIds.contains(order.orderId)) {
+          if (kDebugMode) {
+            print('🆕 Reservasi baru terdeteksi: ${order.orderId}');
+          }
+          // Mainkan notifikasi untuk reservasi (bisa pakai sound berbeda)
+          await _notificationService.playNewOrderNotification(
+            order.orderId!,
+            soundPath: 'sounds/ding.mp3', // ✅ Ganti dengan path sound Anda
+          );
+        }
+      }
+    }
+
+    // ✅ Update existing order IDs
+    _existingOrderIds.clear();
+    for (var order in [...allPreparing, ...newDone, ...newReservations]) {
+      if (order.orderId != null) {
+        _existingOrderIds.add(order.orderId!);
+      }
+    }
+
     for (var o in allPreparing) {
       if (_alertPlayedMap.containsKey(o.orderId)) {
       } else {
@@ -142,16 +192,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     });
   }
 
-  void _confirmOrder(Order order) async {
-    setState(() {
-      queue.remove(order);
-      preparing.add(order);
-    });
-
-    if (order.orderId != null) {
-      await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
-    }
-  }
 
   void _completeOrder(Order order) async {
     setState(() {
@@ -333,6 +373,27 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
             ),
             const Spacer(),
+            // ✅ Tambahkan badge untuk notifikasi queue
+            if (_notificationService.queueLength > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.notifications_active, size: 16, color: Colors.white),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_notificationService.queueLength}',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
             IconButton(
               icon: const Icon(Icons.refresh, color: Colors.white),
               onPressed: _isLoading ? null : _loadOrders,

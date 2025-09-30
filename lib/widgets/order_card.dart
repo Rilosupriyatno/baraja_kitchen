@@ -81,7 +81,7 @@ class OrderCard extends StatelessWidget {
               ),
 
               // ✅ Info waktu reservasi jika ada
-              if (isReservation && order.start != null)
+              if (isReservation)
                 Padding(
                   padding: EdgeInsets.only(top: 4),
                   child: Row(
@@ -89,7 +89,7 @@ class OrderCard extends StatelessWidget {
                       Icon(Icons.access_time, size: 16, color: Colors.orange),
                       SizedBox(width: 4),
                       Text(
-                        'Waktu: ${DateFormat('dd MMM yyyy, HH:mm').format(order.start!)}',
+                        'Waktu: ${DateFormat('dd MMM yyyy, HH:mm').format(order.start)}',
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.orange.shade700,
