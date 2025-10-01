@@ -366,7 +366,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
         backgroundColor: AppTheme.primaryColor,
         title: Row(
           children: [
-            Image.asset('assets/logo.png', height: 36),
+            Image.asset('assets/icons/logo.png', height: 36),
             const SizedBox(width: 12),
             const Text(
               'Baraja Kitchen',
