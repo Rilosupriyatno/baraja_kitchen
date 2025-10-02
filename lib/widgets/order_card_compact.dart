@@ -7,10 +7,11 @@ class OrderCardCompact extends StatefulWidget {
   final bool isExpanded;
   final bool showTimer;
   final bool isFinished;
+  final int? queueNumber; // Nomor urut dalam antrian
   final VoidCallback onToggleExpand;
   final VoidCallback? onComplete;
   final Function(Order, int)? onAddTime;
-  final VoidCallback? onReprint; // ✅ Tambah callback untuk reprint
+  final VoidCallback? onReprint;
 
   const OrderCardCompact({
     super.key,
@@ -18,10 +19,11 @@ class OrderCardCompact extends StatefulWidget {
     required this.isExpanded,
     required this.showTimer,
     required this.isFinished,
+    this.queueNumber,
     required this.onToggleExpand,
     this.onComplete,
     this.onAddTime,
-    this.onReprint, // ✅ Parameter baru
+    this.onReprint,
   });
 
   @override
@@ -92,6 +94,34 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              // Nomor Urut (jika ada)
+              if (widget.queueNumber != null && widget.showTimer && !widget.isFinished)
+                Container(
+                  width: 48,
+                  height: 48,
+                  margin: const EdgeInsets.only(right: 12),
+                  decoration: BoxDecoration(
+                    color: _cardColor,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _cardColor.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${widget.queueNumber}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -127,7 +157,7 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                   ],
                 ),
               ),
-              // ✅ Tombol Print di header (selalu visible)
+              // Tombol Print di header (selalu visible)
               if (widget.onReprint != null)
                 Container(
                   decoration: BoxDecoration(

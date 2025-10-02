@@ -566,7 +566,9 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
           child: Wrap(
             spacing: 16,
             runSpacing: 16,
-            children: filteredOrders.map((order) {
+            children: filteredOrders.asMap().entries.map((entry) {
+              final index = entry.key;
+              final order = entry.value;
               final isExpanded = _expandedOrders[order.orderId] ?? false;
 
               return SizedBox(
@@ -576,6 +578,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                   isExpanded: isExpanded,
                   showTimer: showTimer,
                   isFinished: isFinished,
+                  queueNumber: showTimer && !isFinished ? index + 1 : null,
                   onToggleExpand: () {
                     setState(() {
                       _expandedOrders[order.orderId ?? ''] = !isExpanded;
