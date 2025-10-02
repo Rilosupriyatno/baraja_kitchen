@@ -133,6 +133,84 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
           ),
           const SizedBox(height: 16),
 
+          // Tambahkan di dalam _buildHeader() setelah service type badge
+
+// Reservation Countdown (khusus untuk reservasi yang belum masuk penyiapan)
+          if (widget.order.service.contains('Reservation') &&
+              widget.order.reservationDateTime != null &&
+              !widget.showTimer) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.purple.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Colors.purple.shade200,
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.schedule,
+                    color: Colors.purple.shade700,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    widget.order.reservationCountdown(),
+                    style: TextStyle(
+                      color: Colors.purple.shade900,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 16),
+
+// ✅ Jika ini reservasi yang sudah pindah ke penyiapan, tampilkan info
+          if (widget.order.service.contains('Reservation') && widget.showTimer) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: Colors.orange.shade300,
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.event_available,
+                    size: 14,
+                    color: Colors.orange.shade700,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Reservasi - Siap dimasak',
+                    style: TextStyle(
+                      color: Colors.orange.shade900,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 16),
+
           // Customer Name & Table
           Row(
             children: [

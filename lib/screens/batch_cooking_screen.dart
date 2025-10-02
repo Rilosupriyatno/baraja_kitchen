@@ -165,7 +165,7 @@ class _BatchCookingViewState extends State<BatchCookingView> {
                 widget.onBatchComplete(orderIds);
               },
             );
-          }).toList(),
+          }),
         ],
       ),
     );
@@ -178,7 +178,7 @@ class _BatchCookingViewState extends State<BatchCookingView> {
     required VoidCallback onComplete,
   }) {
     final firstItem = items.first;
-    final orders = items.map((i) => '${i.orderName} (${i.tableNumber})').toSet().toList();
+    final _ = items.map((i) => '${i.orderName} (${i.tableNumber})').toSet().toList();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),

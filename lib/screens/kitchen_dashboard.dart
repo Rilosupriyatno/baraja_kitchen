@@ -28,7 +28,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   String search = '';
   bool _isLoading = false;
   String? _errorMessage;
-  int _selectedTabIndex = 0; // ✅ 0: Penyiapan, 1: Batch, 2: Selesai, 3: Reservasi
+  int _selectedTabIndex = 0; // 0: Penyiapan, 1: Batch, 2: Selesai, 3: Reservasi
 
   late Timer _mainTimer;
   late Timer _refreshTimer;
@@ -54,6 +54,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   }
 
   void _initializeTimers() {
+    // Timer untuk update waktu setiap detik dan cek late orders
     _mainTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() {
         _currentTime = DateTime.now();
@@ -61,7 +62,8 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       _checkForLateOrders();
     });
 
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+    // Timer untuk refresh orders setiap 15 detik
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _refreshOrders();
     });
   }
@@ -138,15 +140,32 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     final allPreparing = [...newPreparing, ...newQueue];
 
     if (!isInitialLoad) {
+      // Deteksi reservasi yang dipindah ke penyiapan
+      final currentReservationIds = reservations.map((o) => o.orderId).toSet();
+
       for (var order in allPreparing) {
-        if (order.orderId != null && !_existingOrderIds.contains(order.orderId)) {
-          if (kDebugMode) {
-            print('🆕 Order baru terdeteksi di Penyiapan: ${order.orderId}');
+        if (order.orderId != null) {
+          // Cek apakah ini order baru
+          if (!_existingOrderIds.contains(order.orderId)) {
+            if (kDebugMode) {
+              print('🆕 Order baru terdeteksi di Penyiapan: ${order.orderId}');
+            }
+            await _notificationService.playNewOrderNotification(
+              order.orderId!,
+              soundPath: 'sounds/alert.mp3',
+            );
           }
-          await _notificationService.playNewOrderNotification(
-            order.orderId!,
-            soundPath: 'sounds/alert.mp3',
-          );
+          // Cek apakah ini reservasi yang baru dipindah
+          else if (currentReservationIds.contains(order.orderId) &&
+              order.service.contains('Reservation')) {
+            if (kDebugMode) {
+              print('📅 Reservasi ${order.orderId} dipindah ke penyiapan');
+            }
+            await _notificationService.playNewOrderNotification(
+              order.orderId!,
+              soundPath: 'sounds/alert.mp3',
+            );
+          }
         }
       }
 
@@ -218,7 +237,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     _showOrderCompleteDialog(order);
   }
 
-  // ✅ Fungsi baru untuk handle batch completion
   void _completeBatchOrders(List<String> orderIds) async {
     for (var orderId in orderIds) {
       final order = preparing.firstWhere(
@@ -263,7 +281,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     );
   }
 
-  // ✅ Dialog untuk batch completion
   void _showBatchCompleteDialog(int count) {
     showDialog(
       context: context,
@@ -480,7 +497,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       child: Column(
         children: [
           _buildSidebarTab(0, 'Penyiapan', preparing.length),
-          _buildSidebarTab(1, 'Batch Cook', preparing.length), // ✅ Tab baru
+          _buildSidebarTab(1, 'Batch Cook', preparing.length),
           _buildSidebarTab(2, 'Selesai', done.length),
           _buildSidebarTab(3, 'Reservasi', reservations.length),
         ],
@@ -491,10 +508,8 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   Widget _buildSidebarTab(int index, String title, int count) {
     final isSelected = _selectedTabIndex == index;
 
-    // Hitung jumlah batch items untuk tab Batch Cook
     int displayCount = count;
     if (index == 1) {
-      // Hitung berapa banyak menu yang bisa di-batch
       final grouped = _groupIdenticalItemsForCount();
       displayCount = grouped.length;
     }
@@ -545,7 +560,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     );
   }
 
-// Tambahkan helper method
   Map<String, List<BatchItem>> _groupIdenticalItemsForCount() {
     final Map<String, List<BatchItem>> grouped = {};
 
@@ -734,13 +748,13 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
               child: IndexedStack(
                 index: _selectedTabIndex,
                 children: [
-                  _buildOrdersList(preparing, true, false), // Penyiapan
-                  BatchCookingView( // ✅ Batch Cooking View
+                  _buildOrdersList(preparing, true, false),
+                  BatchCookingView(
                     orders: preparing,
                     onBatchComplete: _completeBatchOrders,
                   ),
-                  _buildOrdersList(done, false, true), // Selesai
-                  _buildOrdersList(reservations, false, false), // Reservasi
+                  _buildOrdersList(done, false, true),
+                  _buildOrdersList(reservations, false, false),
                 ],
               ),
             ),

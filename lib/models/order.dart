@@ -5,7 +5,7 @@ class OrderItem {
   final List<Map<String, dynamic>>? addons;
   final List<Map<String, dynamic>>? toppings;
   final String? notes;
-  final String itemId; // ✅ Tambahkan untuk tracking batch
+  final String itemId;
 
   OrderItem({
     required this.name,
@@ -13,7 +13,7 @@ class OrderItem {
     this.addons,
     this.toppings,
     this.notes,
-    required this.itemId, // ✅ Required
+    required this.itemId,
   });
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
@@ -27,7 +27,7 @@ class OrderItem {
           ? List<Map<String, dynamic>>.from(json['toppings'])
           : null,
       notes: json['notes'],
-      itemId: json['_id'] ?? '', // ✅ Ambil dari JSON response
+      itemId: json['_id'] ?? '',
     );
   }
 }
@@ -37,13 +37,16 @@ class Order {
   final String name;
   final String table;
   final String service;
-  final String source; // Web, App, Cashier
-  final String paymentMethod; // Cash, Card, etc
+  final String source;
+  final String paymentMethod;
   final List<OrderItem> items;
+  final String? orderType;
   DateTime? updatedAt;
   final String? reservationDate;
   final String? reservationTime;
-  final String status; // 👈 status order
+  final DateTime? reservationDateTime; // ✅ Full datetime untuk perhitungan
+  late final String status;
+  final Map<String, dynamic>? reservationData; // ✅ Simpan full reservation data
 
   Order({
     this.orderId,
@@ -54,35 +57,37 @@ class Order {
     required this.paymentMethod,
     required this.items,
     this.updatedAt,
+    this.orderType,
     this.reservationDate,
     this.reservationTime,
+    this.reservationDateTime,
     required this.status,
+    this.reservationData,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
-    // Parse items
     final itemsList = (json['items'] as List? ?? [])
         .map((item) => OrderItem.fromJson(item))
         .toList();
 
-// models/order.dart
-// Parse service type
     String serviceType = json['orderType'] ?? 'Dine-In';
 
-// Tetap tampil "Reservation" kalau reservation
     if (json['orderType'] == 'Reservation') {
       serviceType = 'Reservation';
     }
 
-// Hapus bagian yang override dengan type
-
-
     // Parse table number
     String tableNum = json['tableNumber'] ?? '';
     if (tableNum.isEmpty && json['orderType'] == 'Reservation') {
-      if (json['reservation'] != null &&
-          json['reservation']['table_id'] != null &&
-          json['reservation']['table_id'].isNotEmpty) {
+      try {
+        final reservation = json['reservation'];
+        if (reservation != null &&
+            reservation['table_id'] is List &&
+            (reservation['table_id'] as List).isNotEmpty) {
+          final firstTable = reservation['table_id'][0];
+          tableNum = firstTable['table_number'] ?? 'TBD';
+        }
+      } catch (e) {
         tableNum = 'TBD';
       }
     }
@@ -90,16 +95,40 @@ class Order {
     // Parse reservation info
     String? reservationDate;
     String? reservationTime;
+    DateTime? reservationDateTime;
+    Map<String, dynamic>? reservationData;
+
     if (json['reservation'] != null) {
       final reservation = json['reservation'];
-      reservationDate = reservation['reservation_date'];
+      reservationData = Map<String, dynamic>.from(reservation); // ✅ Simpan full data
+
+      final rawDate = reservation['reservation_date'];
       reservationTime = reservation['reservation_time'];
 
-      if (reservationDate != null) {
+      if (rawDate != null) {
         try {
-          final date = DateTime.parse(reservationDate);
+          final date = DateTime.parse(rawDate);
           reservationDate = '${date.day}/${date.month}/${date.year}';
-        } catch (_) {}
+
+          // ✅ Combine date + time untuk DateTime lengkap
+          if (reservationTime != null) {
+            final timeParts = reservationTime.split(':');
+            if (timeParts.length >= 2) {
+              final hour = int.tryParse(timeParts[0]) ?? 0;
+              final minute = int.tryParse(timeParts[1]) ?? 0;
+
+              reservationDateTime = DateTime(
+                date.year,
+                date.month,
+                date.day,
+                hour,
+                minute,
+              );
+            }
+          }
+        } catch (e) {
+          // ignore parsing error
+        }
       }
     }
 
@@ -116,7 +145,10 @@ class Order {
           : DateTime.now(),
       reservationDate: reservationDate,
       reservationTime: reservationTime,
+      orderType: json['orderType'],
+      reservationDateTime: reservationDateTime,
       status: (json['status'] ?? 'Waiting').toString(),
+      reservationData: reservationData,
     );
   }
 
@@ -139,10 +171,9 @@ class Order {
     if (updatedAt == null) return '30:00';
     final now = DateTime.now();
     final diff = now.difference(updatedAt!);
-    final remaining = 30 * 60 - diff.inSeconds; // total detik sisa
+    final remaining = 30 * 60 - diff.inSeconds;
 
     if (remaining <= 0) {
-      // ✅ Kalau sudah lewat 30 menit tampilkan "00:00"
       return '00:00';
     }
 
@@ -152,11 +183,31 @@ class Order {
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
-
   String totalCookTime() {
     if (updatedAt == null) return '0 menit';
     final now = DateTime.now();
     final diff = now.difference(updatedAt!);
     return '${diff.inMinutes} menit';
+  }
+
+  // ✅ Helper untuk tampilan countdown reservasi
+  String reservationCountdown() {
+    if (reservationDateTime == null) return '-';
+
+    final now = DateTime.now();
+    final diff = reservationDateTime!.difference(now);
+
+    if (diff.isNegative) {
+      return 'Sudah lewat';
+    }
+
+    final hours = diff.inHours;
+    final minutes = diff.inMinutes.remainder(60);
+
+    if (hours > 0) {
+      return '$hours jam $minutes menit lagi';
+    } else {
+      return '$minutes menit lagi';
+    }
   }
 }
