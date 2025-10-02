@@ -10,6 +10,7 @@ class OrderCardCompact extends StatefulWidget {
   final VoidCallback onToggleExpand;
   final VoidCallback? onComplete;
   final Function(Order, int)? onAddTime;
+  final VoidCallback? onReprint; // ✅ Tambah callback untuk reprint
 
   const OrderCardCompact({
     super.key,
@@ -20,6 +21,7 @@ class OrderCardCompact extends StatefulWidget {
     required this.onToggleExpand,
     this.onComplete,
     this.onAddTime,
+    this.onReprint, // ✅ Parameter baru
   });
 
   @override
@@ -27,12 +29,9 @@ class OrderCardCompact extends StatefulWidget {
 }
 
 class _OrderCardCompactState extends State<OrderCardCompact> {
-  // Brand Color
   static const Color brandColor = Color(0xFF077A4B);
+  final Map<String, bool> _checkedItems = {};
 
-  final Map<int, bool> _checkedItems = {};
-
-  // Warna sesuai tema dengan brand color
   Color get _cardColor {
     if (widget.isFinished) return brandColor;
     if (widget.showTimer && widget.order.isHalfTimePassed) {
@@ -90,7 +89,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Order ID dan Service Type
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -129,13 +127,28 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                   ],
                 ),
               ),
+              // ✅ Tombol Print di header (selalu visible)
+              if (widget.onReprint != null)
+                Container(
+                  decoration: BoxDecoration(
+                    color: brandColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.print, color: brandColor, size: 20),
+                    onPressed: widget.onReprint,
+                    tooltip: 'Print Ulang',
+                    padding: const EdgeInsets.all(8),
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 16),
 
-          // Tambahkan di dalam _buildHeader() setelah service type badge
-
-// Reservation Countdown (khusus untuk reservasi yang belum masuk penyiapan)
           if (widget.order.service.contains('Reservation') &&
               widget.order.reservationDateTime != null &&
               !widget.showTimer) ...[
@@ -172,9 +185,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
             ),
           ],
 
-          const SizedBox(height: 16),
-
-// ✅ Jika ini reservasi yang sudah pindah ke penyiapan, tampilkan info
           if (widget.order.service.contains('Reservation') && widget.showTimer) ...[
             const SizedBox(height: 12),
             Container(
@@ -211,7 +221,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
 
           const SizedBox(height: 16),
 
-          // Customer Name & Table
           Row(
             children: [
               Icon(Icons.person_outline, size: 16, color: Colors.grey.shade600),
@@ -257,7 +266,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
             ],
           ),
 
-          // Timer (hanya tampil jika tidak expanded)
           if (widget.showTimer && !widget.isExpanded) ...[
             const SizedBox(height: 12),
             Container(
@@ -294,11 +302,9 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
 
           const SizedBox(height: 16),
 
-          // Order Source & Payment Status (jika bukan reservation)
           if (!widget.order.service.contains('Reservation')) ...[
             Row(
               children: [
-                // Source Badge
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
@@ -332,7 +338,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Payment Status
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
@@ -378,7 +383,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
             const SizedBox(height: 16),
           ],
 
-          // Detail Button
           SizedBox(
             width: double.infinity,
             height: 44,
@@ -430,11 +434,9 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Divider
           Divider(color: Colors.grey.shade200, height: 1),
           const SizedBox(height: 20),
 
-          // Detail Pesanan Header
           Row(
             children: [
               Icon(
@@ -455,7 +457,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
           ),
           const SizedBox(height: 16),
 
-          // Items List
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -467,9 +468,8 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
               children: widget.order.items.asMap().entries.map((entry) {
                 final index = entry.key;
                 final item = entry.value;
-                final isChecked = _checkedItems[index] ?? false;
+                final isChecked = _checkedItems['${widget.order.orderId}_$index'] ?? false;
 
-                // Gabungkan addons dan toppings untuk ditampilkan
                 final List<String> extras = [];
                 if (item.addons != null && item.addons!.isNotEmpty) {
                   for (var addon in item.addons!) {
@@ -507,7 +507,7 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                                 value: isChecked,
                                 onChanged: (value) {
                                   setState(() {
-                                    _checkedItems[index] = value ?? false;
+                                    _checkedItems['${widget.order.orderId}_$index'] = value ?? false;
                                   });
                                 },
                                 fillColor: MaterialStateProperty.resolveWith((states) {
@@ -547,7 +547,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                         ],
                       ),
 
-                      // Addons & Toppings
                       if (extras.isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Wrap(
@@ -577,7 +576,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                         ),
                       ],
 
-                      // Notes
                       if (item.notes != null && item.notes!.isNotEmpty) ...[
                         const SizedBox(height: 8),
                         Container(
@@ -621,7 +619,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
             ),
           ),
 
-          // Reservation Info (khusus untuk reservation orders)
           if (widget.order.service.contains('Reservation') &&
               widget.order.reservationDate != null) ...[
             const SizedBox(height: 16),
@@ -698,7 +695,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
           if (widget.showTimer && !widget.isFinished) ...[
             const SizedBox(height: 20),
 
-            // Timer Section
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -766,7 +762,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
 
             const SizedBox(height: 16),
 
-            // Add Time Buttons
             Row(
               children: [
                 Expanded(child: _buildTimeButton('+5 menit', 5)),
@@ -779,7 +774,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
 
             const SizedBox(height: 16),
 
-            // Complete Button
             SizedBox(
               width: double.infinity,
               height: 50,

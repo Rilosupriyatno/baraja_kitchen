@@ -6,6 +6,7 @@ import '../models/order.dart';
 import '../services/order_service.dart';
 import '../services/socket_service.dart';
 import '../services/notification_service.dart';
+import '../services/thermal_print_service.dart';
 import '../widgets/order_card_compact.dart';
 import 'package:flutter/foundation.dart';
 
@@ -28,7 +29,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   String search = '';
   bool _isLoading = false;
   String? _errorMessage;
-  int _selectedTabIndex = 0; // 0: Penyiapan, 1: Batch, 2: Selesai, 3: Reservasi
+  int _selectedTabIndex = 0;
 
   late Timer _mainTimer;
   late Timer _refreshTimer;
@@ -36,8 +37,12 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
   final Map<String, bool> _alertPlayedMap = {};
   final NotificationService _notificationService = NotificationService();
+  final ThermalPrintService _printService = ThermalPrintService();
   final Set<String> _existingOrderIds = <String>{};
   final Map<String, bool> _expandedOrders = {};
+
+  // Status auto print
+  bool _autoPrintEnabled = true;
 
   @override
   void initState() {
@@ -54,7 +59,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   }
 
   void _initializeTimers() {
-    // Timer untuk update waktu setiap detik dan cek late orders
     _mainTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() {
         _currentTime = DateTime.now();
@@ -62,7 +66,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       _checkForLateOrders();
     });
 
-    // Timer untuk refresh orders setiap 15 detik
     _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _refreshOrders();
     });
@@ -140,7 +143,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     final allPreparing = [...newPreparing, ...newQueue];
 
     if (!isInitialLoad) {
-      // Deteksi reservasi yang dipindah ke penyiapan
       final currentReservationIds = reservations.map((o) => o.orderId).toSet();
 
       for (var order in allPreparing) {
@@ -150,10 +152,20 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
             if (kDebugMode) {
               print('🆕 Order baru terdeteksi di Penyiapan: ${order.orderId}');
             }
+
+            // Play notification
             await _notificationService.playNewOrderNotification(
               order.orderId!,
               soundPath: 'sounds/alert.mp3',
             );
+
+            // 🖨️ Auto print jika enabled
+            if (_autoPrintEnabled && _printService.isConfigured) {
+              final printed = await _printService.autoPrintOrder(order);
+              if (printed && mounted) {
+                _showPrintSuccessSnackbar(order.orderId!);
+              }
+            }
           }
           // Cek apakah ini reservasi yang baru dipindah
           else if (currentReservationIds.contains(order.orderId) &&
@@ -161,10 +173,19 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
             if (kDebugMode) {
               print('📅 Reservasi ${order.orderId} dipindah ke penyiapan');
             }
+
             await _notificationService.playNewOrderNotification(
               order.orderId!,
               soundPath: 'sounds/alert.mp3',
             );
+
+            // 🖨️ Auto print reservasi yang masuk penyiapan
+            if (_autoPrintEnabled && _printService.isConfigured) {
+              final printed = await _printService.autoPrintOrder(order);
+              if (printed && mounted) {
+                _showPrintSuccessSnackbar(order.orderId!);
+              }
+            }
           }
         }
       }
@@ -223,6 +244,22 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       done = newDone;
       reservations = newReservations;
     });
+  }
+
+  void _showPrintSuccessSnackbar(String orderId) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.print, color: Colors.white),
+            const SizedBox(width: 8),
+            Text('Order $orderId berhasil diprint'),
+          ],
+        ),
+        backgroundColor: brandColor,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   void _completeOrder(Order order) async {
@@ -301,6 +338,80 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
           TextButton(
             child: const Text('OK', style: TextStyle(fontSize: 16, color: brandColor)),
             onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPrinterSettings() {
+    final ipController = TextEditingController(text: _printService.printerIp);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Pengaturan Printer'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: ipController,
+              decoration: const InputDecoration(
+                labelText: 'IP Address Printer',
+                hintText: '192.168.1.100',
+                prefixIcon: Icon(Icons.print),
+              ),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Text('Auto Print'),
+                const Spacer(),
+                Switch(
+                  value: _autoPrintEnabled,
+                  onChanged: (value) {
+                    setState(() {
+                      _autoPrintEnabled = value;
+                    });
+                  },
+                  activeColor: brandColor,
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final ip = ipController.text.trim();
+              if (ip.isNotEmpty) {
+                _printService.configurePrinter(ip);
+
+                // Test koneksi
+                final success = await _printService.testConnection();
+
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          success
+                              ? 'Printer berhasil dikonfigurasi!'
+                              : 'Gagal terhubung ke printer'
+                      ),
+                      backgroundColor: success ? brandColor : Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: brandColor),
+            child: const Text('Test & Simpan'),
           ),
         ],
       ),
@@ -472,6 +583,30 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                   },
                   onComplete: showTimer && !isFinished ? () => _completeOrder(order) : null,
                   onAddTime: showTimer ? _addTimeToOrder : null,
+                  onReprint: () async {
+                    final success = await _printService.manualPrint(order);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              Icon(
+                                success ? Icons.check_circle : Icons.error,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(success
+                                  ? 'Berhasil print ulang'
+                                  : 'Gagal print, cek koneksi printer'
+                              ),
+                            ],
+                          ),
+                          backgroundColor: success ? brandColor : Colors.red,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
                 ),
               );
             }).toList(),
@@ -631,6 +766,46 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            // Printer Status Indicator
+            if (_printService.isConfigured)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: _autoPrintEnabled
+                      ? Colors.green.shade50
+                      : Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: _autoPrintEnabled
+                        ? Colors.green.shade300
+                        : Colors.orange.shade300,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.print,
+                      size: 14,
+                      color: _autoPrintEnabled
+                          ? Colors.green.shade700
+                          : Colors.orange.shade700,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _autoPrintEnabled ? 'Auto' : 'Manual',
+                      style: TextStyle(
+                        color: _autoPrintEnabled
+                            ? Colors.green.shade900
+                            : Colors.orange.shade900,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (_notificationService.queueLength > 0)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -662,6 +837,19 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                   ],
                 ),
               ),
+            // Printer Settings Button
+            Container(
+              decoration: BoxDecoration(
+                color: brandColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.print, color: brandColor, size: 24),
+                onPressed: _showPrinterSettings,
+                tooltip: 'Pengaturan Printer',
+              ),
+            ),
+            const SizedBox(width: 8),
             Container(
               decoration: BoxDecoration(
                 color: brandColor.withOpacity(0.1),
