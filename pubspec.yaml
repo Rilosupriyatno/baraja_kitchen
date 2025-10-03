@@ -30,7 +30,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  audioplayers: ^5.2.0 
+  audioplayers: ^5.2.0
   font_awesome_flutter: ^10.7.0
   intl: ^0.18.1
   flutter_dotenv: ^5.2.1
@@ -44,6 +44,10 @@ dependencies:
   esc_pos_printer: ^4.1.0
   esc_pos_utils: ^1.1.0
   network_info_plus: ^5.0.0
+  flutter_bluetooth_serial: ^0.4.0
+
+  # Permissions
+  permission_handler: ^11.0.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

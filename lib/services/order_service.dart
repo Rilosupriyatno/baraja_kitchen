@@ -20,9 +20,9 @@ class OrderService {
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = json.decode(response.body);
-        const JsonEncoder encoder = JsonEncoder.withIndent('  ');
-        final prettyData = encoder.convert(data);
-        debugPrint('Fetched orders:\n$prettyData');
+        // const JsonEncoder encoder = JsonEncoder.withIndent('  ');
+        // final prettyData = encoder.convert(data);
+        // debugPrint('Fetched orders:\n$prettyData');
 
         if (data['success'] == true && data['data'] != null) {
           List<dynamic> ordersData = data['data'];
