@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
+import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import '../models/order.dart';
 import '../services/order_service.dart';
 import '../services/socket_service.dart';
@@ -9,7 +10,6 @@ import '../services/notification_service.dart';
 import '../services/thermal_print_service.dart';
 import '../widgets/order_card_compact.dart';
 import 'package:flutter/foundation.dart';
-
 import 'batch_cooking_screen.dart';
 
 class KitchenDashboard extends StatefulWidget {
@@ -41,7 +41,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   final Set<String> _existingOrderIds = <String>{};
   final Map<String, bool> _expandedOrders = {};
 
-  // Status auto print
   bool _autoPrintEnabled = true;
 
   @override
@@ -52,7 +51,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
     SocketService.connect(
       outletId: "outlet-1",
-      onNewOrder: (newOrder) {
+      onNewOrder: (_) {
         _refreshOrders();
       },
     );
@@ -131,11 +130,12 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     final newDone = ordersMap['completed'] ?? [];
     final newReservations = ordersMap['reservations'] ?? [];
 
+    // Auto-confirm pending orders
     for (var order in newQueue) {
-      if (order.orderId != null) {
+      if (order.orderId != null && !_existingOrderIds.contains(order.orderId)) {
         await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
         if (kDebugMode) {
-          print('✅ Auto-confirmed order ${order.orderId} to OnProcess');
+          print('Auto-confirmed order ${order.orderId} to OnProcess');
         }
       }
     }
@@ -146,107 +146,159 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       final currentReservationIds = reservations.map((o) => o.orderId).toSet();
 
       for (var order in allPreparing) {
-        if (order.orderId != null) {
-          // Cek apakah ini order baru
-          if (!_existingOrderIds.contains(order.orderId)) {
-            if (kDebugMode) {
-              print('🆕 Order baru terdeteksi di Penyiapan: ${order.orderId}');
-            }
+        if (order.orderId == null) continue;
 
-            // Play notification
-            await _notificationService.playNewOrderNotification(
-              order.orderId!,
-              soundPath: 'sounds/alert.mp3',
-            );
+        // Check apakah order sudah pernah diproses
+        final isNewOrder = !_existingOrderIds.contains(order.orderId);
+        final movedFromReservation = currentReservationIds.contains(order.orderId) &&
+            order.service.contains('Reservation');
 
-            // 🖨️ Auto print jika enabled
-            if (_autoPrintEnabled && _printService.isConfigured) {
-              final printed = await _printService.autoPrintOrder(order);
-              if (printed && mounted) {
-                _showPrintSuccessSnackbar(order.orderId!);
-              }
-            }
+        if (kDebugMode) {
+          print('🔍 Checking order: ${order.orderId}');
+          print('   isNewOrder: $isNewOrder');
+          print('   movedFromReservation: $movedFromReservation');
+          print('   _existingOrderIds.contains: ${_existingOrderIds.contains(order.orderId)}');
+          print('   Total _existingOrderIds: ${_existingOrderIds.length}');
+          if (isNewOrder) {
+            print('   _existingOrderIds: $_existingOrderIds');
           }
-          // Cek apakah ini reservasi yang baru dipindah
-          else if (currentReservationIds.contains(order.orderId) &&
-              order.service.contains('Reservation')) {
-            if (kDebugMode) {
-              print('📅 Reservasi ${order.orderId} dipindah ke penyiapan');
-            }
+        }
 
-            await _notificationService.playNewOrderNotification(
-              order.orderId!,
-              soundPath: 'sounds/alert.mp3',
-            );
-
-            // 🖨️ Auto print reservasi yang masuk penyiapan
-            if (_autoPrintEnabled && _printService.isConfigured) {
-              final printed = await _printService.autoPrintOrder(order);
-              if (printed && mounted) {
-                _showPrintSuccessSnackbar(order.orderId!);
-              }
-            }
+        if (isNewOrder || movedFromReservation) {
+          if (kDebugMode) {
+            print('✅ Order baru di Penyiapan: ${order.orderId}');
           }
+
+          // CRITICAL: Tambahkan ke _existingOrderIds SEGERA (synchronous)
+          // Ini mencegah race condition dari multiple refresh cycles
+          _existingOrderIds.add(order.orderId!);
+
+          if (kDebugMode) {
+            print('➕ Added ${order.orderId} to _existingOrderIds IMMEDIATELY');
+            print('   _existingOrderIds.contains now: ${_existingOrderIds.contains(order.orderId)}');
+          }
+
+          // Play notification (async, tapi tidak blocking untuk add to set)
+          _notificationService.playNewOrderNotification(
+            order.orderId!,
+            soundPath: 'sounds/alert.mp3',
+          ).catchError((e) {
+            if (kDebugMode) {
+              print('Error playing notification: $e');
+            }
+          });
+
+          // Auto print (non-blocking)
+          if (_autoPrintEnabled && _printService.isConfigured) {
+            final alreadyPrinted = _printService.isAlreadyPrinted(order.orderId);
+
+            if (kDebugMode) {
+              print('🖨️ Print check for ${order.orderId}:');
+              print('   _autoPrintEnabled: $_autoPrintEnabled');
+              print('   isConfigured: ${_printService.isConfigured}');
+              print('   isAlreadyPrinted: $alreadyPrinted');
+            }
+
+            if (!alreadyPrinted) {
+              if (kDebugMode) {
+                print('🖨️ Starting auto print for ${order.orderId}');
+              }
+
+              // Fire and forget - jangan await untuk mencegah blocking
+              _printService.autoPrintOrder(order).then((printed) {
+                if (kDebugMode) {
+                  print(printed
+                      ? '✅ Print success for ${order.orderId}'
+                      : '❌ Print failed for ${order.orderId}');
+                }
+
+                if (printed && mounted) {
+                  _showPrintSuccessSnackbar(order.orderId!);
+                }
+              }).catchError((e) {
+                if (kDebugMode) {
+                  print('❌ Print error for ${order.orderId}: $e');
+                }
+              });
+            } else if (kDebugMode) {
+              print('⏭️ Skip print - already printed: ${order.orderId}');
+            }
+          } else if (kDebugMode) {
+            print('⏭️ Skip print for ${order.orderId}:');
+            print('   _autoPrintEnabled: $_autoPrintEnabled');
+            print('   isConfigured: ${_printService.isConfigured}');
+          }
+        } else if (kDebugMode && _existingOrderIds.length < 20) {
+          print('⏭️ Skip order ${order.orderId} - already processed');
         }
       }
 
+      // Process new reservations
       for (var order in newReservations) {
         if (order.orderId != null && !_existingOrderIds.contains(order.orderId)) {
           if (kDebugMode) {
-            print('🆕 Reservasi baru terdeteksi: ${order.orderId}');
+            print('📅 Reservasi baru: ${order.orderId}');
           }
-          await _notificationService.playNewOrderNotification(
+
+          // Add immediately
+          _existingOrderIds.add(order.orderId!);
+
+          // Play notification (non-blocking)
+          _notificationService.playNewOrderNotification(
             order.orderId!,
             soundPath: 'sounds/ding.mp3',
-          );
+          ).catchError((e) {
+            if (kDebugMode) {
+              print('Error playing reservation notification: $e');
+            }
+          });
         }
       }
-    }
+    } else {
+      // Initial load: add all orders to existing set
+      if (kDebugMode) {
+        print('📋 Initial load - adding all orders to _existingOrderIds');
+      }
 
-    _existingOrderIds.clear();
-    for (var order in [...allPreparing, ...newDone, ...newReservations]) {
-      if (order.orderId != null) {
-        _existingOrderIds.add(order.orderId!);
+      for (var order in [...allPreparing, ...newDone, ...newReservations]) {
+        if (order.orderId != null) {
+          _existingOrderIds.add(order.orderId!);
+        }
+      }
+
+      if (kDebugMode) {
+        print('📋 Total orders in _existingOrderIds: ${_existingOrderIds.length}');
       }
     }
 
+    // Initialize alert played map
     for (var o in allPreparing) {
-      if (_alertPlayedMap.containsKey(o.orderId)) {
-      } else {
-        _alertPlayedMap[o.orderId ?? ""] = false;
-      }
+      _alertPlayedMap.putIfAbsent(o.orderId ?? "", () => false);
     }
 
-    allPreparing.sort((a, b) {
-      if (a.updatedAt == null && b.updatedAt == null) return 0;
-      if (a.updatedAt == null) return 1;
-      if (b.updatedAt == null) return -1;
-      return a.updatedAt!.compareTo(b.updatedAt!);
-    });
+    // Sort orders
+    allPreparing.sort((a, b) => (a.updatedAt ?? DateTime(0))
+        .compareTo(b.updatedAt ?? DateTime(0)));
+    newDone.sort((a, b) => (a.updatedAt ?? DateTime(0))
+        .compareTo(b.updatedAt ?? DateTime(0)));
+    newReservations.sort((a, b) => (a.updatedAt ?? DateTime(0))
+        .compareTo(b.updatedAt ?? DateTime(0)));
 
-    newDone.sort((a, b) {
-      if (a.updatedAt == null && b.updatedAt == null) return 0;
-      if (a.updatedAt == null) return 1;
-      if (b.updatedAt == null) return -1;
-      return a.updatedAt!.compareTo(b.updatedAt!);
-    });
-
-    newReservations.sort((a, b) {
-      if (a.updatedAt == null && b.updatedAt == null) return 0;
-      if (a.updatedAt == null) return 1;
-      if (b.updatedAt == null) return -1;
-      return a.updatedAt!.compareTo(b.updatedAt!);
-    });
-
-    setState(() {
-      queue = [];
-      preparing = allPreparing;
-      done = newDone;
-      reservations = newReservations;
-    });
+    if (mounted) {
+      setState(() {
+        queue = [];
+        preparing = allPreparing;
+        done = newDone;
+        reservations = newReservations;
+      });
+    }
   }
 
   void _showPrintSuccessSnackbar(String orderId) {
+    if (kDebugMode) {
+      print('✅ [AUTO PRINT] Order $orderId berhasil diprint otomatis');
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -345,75 +397,17 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   }
 
   void _showPrinterSettings() {
-    final ipController = TextEditingController(text: _printService.printerIp);
-
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Pengaturan Printer'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: ipController,
-              decoration: const InputDecoration(
-                labelText: 'IP Address Printer',
-                hintText: '192.168.1.100',
-                prefixIcon: Icon(Icons.print),
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                const Text('Auto Print'),
-                const Spacer(),
-                Switch(
-                  value: _autoPrintEnabled,
-                  onChanged: (value) {
-                    setState(() {
-                      _autoPrintEnabled = value;
-                    });
-                  },
-                  activeColor: brandColor,
-                ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final ip = ipController.text.trim();
-              if (ip.isNotEmpty) {
-                _printService.configurePrinter(ip);
-
-                // Test koneksi
-                final success = await _printService.testConnection();
-
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                          success
-                              ? 'Printer berhasil dikonfigurasi!'
-                              : 'Gagal terhubung ke printer'
-                      ),
-                      backgroundColor: success ? brandColor : Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: brandColor),
-            child: const Text('Test & Simpan'),
-          ),
-        ],
+      builder: (context) => _PrinterSettingsDialog(
+        printService: _printService,
+        autoPrintEnabled: _autoPrintEnabled,
+        onAutoPrintChanged: (value) {
+          setState(() {
+            _autoPrintEnabled = value;
+          });
+        },
+        brandColor: brandColor,
       ),
     );
   }
@@ -587,6 +581,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                   onComplete: showTimer && !isFinished ? () => _completeOrder(order) : null,
                   onAddTime: showTimer ? _addTimeToOrder : null,
                   onReprint: () async {
+                    print('Attempting to reprint order ${order.orderId}'); // Log manual print attempt
                     final success = await _printService.manualPrint(order);
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -609,7 +604,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                         ),
                       );
                     }
-                  },
+                  }
                 ),
               );
             }).toList(),
@@ -769,7 +764,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            // Printer Status Indicator
             if (_printService.isConfigured)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -789,7 +783,9 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      Icons.print,
+                      _printService.connectionType == PrinterConnectionType.wifi
+                          ? Icons.wifi
+                          : Icons.bluetooth,
                       size: 14,
                       color: _autoPrintEnabled
                           ? Colors.green.shade700
@@ -840,7 +836,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                   ],
                 ),
               ),
-            // Printer Settings Button
             Container(
               decoration: BoxDecoration(
                 color: brandColor.withOpacity(0.1),
@@ -952,6 +947,530 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ==================== PRINTER SETTINGS DIALOG ====================
+class _PrinterSettingsDialog extends StatefulWidget {
+  final ThermalPrintService printService;
+  final bool autoPrintEnabled;
+  final Function(bool) onAutoPrintChanged;
+  final Color brandColor;
+
+  const _PrinterSettingsDialog({
+    required this.printService,
+    required this.autoPrintEnabled,
+    required this.onAutoPrintChanged,
+    required this.brandColor,
+  });
+
+  @override
+  State<_PrinterSettingsDialog> createState() => _PrinterSettingsDialogState();
+}
+
+class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
+  int _selectedConnectionType = 0;
+  final TextEditingController _ipController = TextEditingController();
+
+  List<BluetoothDevice> _bluetoothDevices = [];
+  BluetoothDevice? _selectedDevice;
+  bool _isScanning = false;
+  String? _errorMessage;
+
+  late bool _autoPrintEnabled; // ✅ tambahan state lokal
+
+
+  @override
+  void initState() {
+    super.initState();
+    _ipController.text = widget.printService.printerIp ?? '';
+    _autoPrintEnabled = widget.autoPrintEnabled; // ✅ inisialisasi dari parent
+
+    if (widget.printService.connectionType == PrinterConnectionType.bluetooth) {
+      _selectedConnectionType = 1;
+      _selectedDevice = widget.printService.bluetoothDevice;
+      if (_selectedDevice != null) {
+        _bluetoothDevices = [_selectedDevice!];
+      }
+    }
+  }
+
+
+  @override
+  void dispose() {
+    _ipController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _scanBluetoothDevices() async {
+    setState(() {
+      _isScanning = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final devices = await widget.printService.getPairedDevices();
+
+      setState(() {
+        // Gabungkan dengan device yang sudah ada (untuk menghindari duplikat)
+        final Set<String> existingAddresses = _bluetoothDevices.map((d) => d.address).toSet();
+        for (var device in devices) {
+          if (!existingAddresses.contains(device.address)) {
+            _bluetoothDevices.add(device);
+          }
+        }
+        _isScanning = false;
+      });
+
+      if (devices.isEmpty && _bluetoothDevices.isEmpty) {
+        setState(() {
+          _errorMessage = 'Tidak ada printer yang dipasangkan. Silakan pair printer di pengaturan Bluetooth perangkat terlebih dahulu.';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isScanning = false;
+        _errorMessage = e.toString();
+      });
+    }
+  }
+
+  void _showManualMacAddressDialog() {
+    final TextEditingController macController = TextEditingController();
+    final TextEditingController nameController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Input Manual MAC Address'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Nama Printer (Opsional)',
+                hintText: 'Thermal Printer',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: macController,
+              decoration: const InputDecoration(
+                labelText: 'MAC Address',
+                hintText: '00:11:22:33:44:55',
+                border: OutlineInputBorder(),
+              ),
+              textCapitalization: TextCapitalization.characters,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Format: XX:XX:XX:XX:XX:XX\nContoh: 00:11:22:33:44:55',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final mac = macController.text.trim();
+              final name = nameController.text.trim();
+
+              if (mac.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('MAC Address tidak boleh kosong'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+
+              final device = BluetoothDevice(
+                address: mac,
+                name: name.isEmpty ? 'Thermal Printer' : name,
+              );
+
+              setState(() {
+                _selectedDevice = device;
+                // Cek apakah device sudah ada di list
+                final exists = _bluetoothDevices.any((d) => d.address == device.address);
+                if (!exists) {
+                  _bluetoothDevices.add(device);
+                }
+              });
+
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: widget.brandColor,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Tambah'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _testAndSave() async {
+    if (_selectedConnectionType == 0) {
+      final ip = _ipController.text.trim();
+      if (ip.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('IP Address tidak boleh kosong'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      widget.printService.configurePrinter(ip);
+    } else {
+      if (_selectedDevice == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Pilih printer Bluetooth terlebih dahulu'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      widget.printService.configureBluetoothPrinter(_selectedDevice!);
+    }
+
+    final success = await widget.printService.testConnection();
+
+    if (mounted) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? 'Printer berhasil dikonfigurasi!'
+                : 'Gagal terhubung ke printer',
+          ),
+          backgroundColor: success ? widget.brandColor : Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Pengaturan Printer'),
+      content: SizedBox(
+        width: 400,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(
+                    value: 0,
+                    label: Text('WiFi/LAN'),
+                    icon: Icon(Icons.wifi),
+                  ),
+                  ButtonSegment(
+                    value: 1,
+                    label: Text('Bluetooth'),
+                    icon: Icon(Icons.bluetooth),
+                  ),
+                ],
+                selected: {_selectedConnectionType},
+                onSelectionChanged: (Set<int> newSelection) {
+                  setState(() {
+                    _selectedConnectionType = newSelection.first;
+                    _errorMessage = null;
+                  });
+                },
+              ),
+
+              const SizedBox(height: 20),
+
+              if (_selectedConnectionType == 0) ...[
+                TextField(
+                  controller: _ipController,
+                  decoration: const InputDecoration(
+                    labelText: 'IP Address Printer',
+                    hintText: '192.168.1.100',
+                    prefixIcon: Icon(Icons.computer),
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Masukkan IP Address printer thermal di jaringan lokal',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+
+              if (_selectedConnectionType == 1) ...[
+                if (_errorMessage != null)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.red[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red[200]!),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.error_outline, color: Colors.red[700], size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: TextStyle(
+                              color: Colors.red[700],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _isScanning ? null : _scanBluetoothDevices,
+                        icon: _isScanning
+                            ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                            : const Icon(Icons.bluetooth_searching),
+                        label: Text(_isScanning ? 'Mencari...' : 'Lihat Paired'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: widget.brandColor,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(0, 48),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _showManualMacAddressDialog,
+                        icon: const Icon(Icons.edit),
+                        label: const Text('Input MAC'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey[700],
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(0, 48),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 16),
+
+                if (_bluetoothDevices.isNotEmpty) ...[
+                  const Text(
+                    'Perangkat Ditemukan:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 200),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _bluetoothDevices.length,
+                      itemBuilder: (context, index) {
+                        final device = _bluetoothDevices[index];
+                        final isSelected = _selectedDevice?.address == device.address;
+
+                        return ListTile(
+                          leading: Icon(
+                            Icons.print_outlined,
+                            color: isSelected ? widget.brandColor : Colors.grey[600],
+                          ),
+                          title: Text(
+                            device.name?.isEmpty ?? true
+                                ? 'Unknown Device'
+                                : device.name!,
+                            style: TextStyle(
+                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                            ),
+                          ),
+                          subtitle: Text(
+                            device.address,
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          trailing: isSelected
+                              ? Icon(Icons.check_circle, color: widget.brandColor)
+                              : null,
+                          selected: isSelected,
+                          selectedTileColor: widget.brandColor.withOpacity(0.1),
+                          onTap: () {
+                            setState(() {
+                              _selectedDevice = device;
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ] else if (!_isScanning) ...[
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(Icons.bluetooth_disabled,
+                            size: 48,
+                            color: Colors.grey[400]
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Belum ada perangkat',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Pair printer di Settings > Bluetooth,\nlalu tekan "Lihat Paired"',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.grey[500],
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                if (_isScanning) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Mencari printer yang sudah dipair...',
+                            style: TextStyle(
+                              color: Colors.blue[900],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+
+              const SizedBox(height: 20),
+              const Divider(),
+              const SizedBox(height: 12),
+
+              Row(
+                children: [
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Auto Print',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Print otomatis saat order baru',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Transform.scale(
+                    scale: 0.9,
+                    child: Switch(
+                      value: _autoPrintEnabled, // ✅ pakai state lokal
+                      onChanged: (value) {
+                        setState(() {
+                          _autoPrintEnabled = value; // ✅ update langsung di UI
+                        });
+                        widget.onAutoPrintChanged(value); // ✅ tetap sinkron ke parent
+                      },
+                      activeColor: widget.brandColor,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Batal'),
+        ),
+        ElevatedButton(
+          onPressed: _testAndSave,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: widget.brandColor,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Test & Simpan'),
+        ),
+      ],
     );
   }
 }
