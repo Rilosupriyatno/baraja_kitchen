@@ -24,17 +24,17 @@ class SocketService {
     );
 
     _socket!.onConnect((_) {
-      print('✅ Socket connected: ${_socket!.id}');
+      // print('✅ Socket connected: ${_socket!.id}');
 
       // Join ke room dapur (backend: join_kitchen_room(outletId, callback))
       _socket!.emitWithAck('join_kitchen_room', outletId, ack: (data) {
-        print('Joined kitchen room response: $data');
+        // print('Joined kitchen room response: $data');
       });
     });
 
     // 🔹 Event: ada order baru masuk
     _socket!.on('new_order', (data) async {
-      print('📥 New order event received: $data');
+      // print('📥 New order event received: $data');
 
       try {
         // Ambil ulang semua order biar konsisten mappingnya
@@ -44,12 +44,12 @@ class SocketService {
           onNewOrder(orders.first);
         }
       } catch (e) {
-        print('⚠️ Error handling new order: $e');
+        // print('⚠️ Error handling new order: $e');
       }
     });
 
     _socket!.onDisconnect((_) {
-      print('❌ Socket disconnected');
+      // print('❌ Socket disconnected');
     });
   }
 

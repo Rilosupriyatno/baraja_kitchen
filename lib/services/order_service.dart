@@ -53,9 +53,9 @@ class OrderService {
 
       return response.statusCode == 200;
     } catch (e) {
-      if (kDebugMode) {
-        print('Error updating order status: $e');
-      }
+      // if (kDebugMode) {
+      //   print('Error updating order status: $e');
+      // }
       return false;
     }
   }
@@ -71,12 +71,12 @@ class OrderService {
     final diff = reservationTime.difference(now);
     final diffInMinutes = diff.inMinutes;
 
-    if (kDebugMode) {
-      print('🕐 Checking reservation ${order.orderId}:');
-      print('   Current time: $now');
-      print('   Reservation time: $reservationTime');
-      print('   Difference: $diffInMinutes minutes');
-    }
+    // if (kDebugMode) {
+    //   print('🕐 Checking reservation ${order.orderId}:');
+    //   print('   Current time: $now');
+    //   print('   Reservation time: $reservationTime');
+    //   print('   Difference: $diffInMinutes minutes');
+    // }
 
     // Pindahkan jika waktu reservasi 30 menit atau kurang dari sekarang
     // Dan belum terlalu lewat (maksimal 60 menit setelah waktu reservasi)
