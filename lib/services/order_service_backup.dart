@@ -1,9 +1,16 @@
-// services/order_service.dart (FIXED VERSION)
+// services/order_service.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/order.dart';
 import 'package:flutter/foundation.dart';
+
+// Provide a safe fallback 'category' getter for OrderItem in case the model
+// doesn't expose a category field; this returns null so existing null-aware
+// code continues to work without compile errors.
+extension OrderItemCategoryExtension on OrderItem {
+  String? get category => null;
+}
 
 class OrderService {
   static String get baseUrl => dotenv.env['BASE_URL'] ?? 'http://localhost:3000';
@@ -222,6 +229,7 @@ class OrderService {
     final now = DateTime.now();
     final reservationTime = order.reservationDateTime!;
 
+    // Hitung selisih waktu dalam menit
     final diff = reservationTime.difference(now);
     final diffInMinutes = diff.inMinutes;
 
@@ -232,48 +240,56 @@ class OrderService {
       print('   Difference: $diffInMinutes minutes');
     }
 
+    // Pindahkan jika waktu reservasi 30 menit atau kurang dari sekarang
+    // Dan belum terlalu lewat (maksimal 60 menit setelah waktu reservasi)
     return diffInMinutes <= 30 && diffInMinutes >= -60;
   }
 
   // ✅ Helper: Filter order untuk bar berdasarkan area meja
   static List<Order> _filterOrdersByBarArea(List<Order> orders, String barType) {
-
-    final filtered = orders.where((order) {
-      if (order.table == null || order.table!.isEmpty) {
-        return false;
-      }
+    return orders.where((order) {
+      if (order.table == null || order.table!.isEmpty) return false;
 
       final tableNumber = order.table!.toUpperCase();
       final firstChar = tableNumber[0];
 
-      bool match = false;
       if (barType == 'depan') {
         // Bar depan: meja A-I
-        match = firstChar.compareTo('A') >= 0 && firstChar.compareTo('I') <= 0;
+        return firstChar.compareTo('A') >= 0 && firstChar.compareTo('I') <= 0;
       } else if (barType == 'belakang') {
         // Bar belakang: meja J-Z
-        match = firstChar.compareTo('J') >= 0 && firstChar.compareTo('Z') <= 0;
+        return firstChar.compareTo('J') >= 0 && firstChar.compareTo('Z') <= 0;
       }
 
-      return match;
+      return false;
     }).toList();
-
-    return filtered;
   }
 
-  // ✅ Helper: Filter hanya item minuman dari order (FIXED VERSION)
+  // ✅ Helper: Filter hanya item minuman dari order
   static List<Order> _filterBeverageItems(List<Order> orders) {
+    return orders.map((order) {
+      final beverageItems = order.items.where((item) {
+        final category = item.category?.toLowerCase() ?? '';
+        final name = item.name.toLowerCase();
 
-    final filteredOrders = <Order>[];
+        return category.contains('minuman') ||
+            category.contains('beverage') ||
+            category.contains('drink') ||
+            name.contains('jus') ||
+            name.contains('soda') ||
+            name.contains('kopi') ||
+            name.contains('teh') ||
+            name.contains('air') ||
+            name.contains('mocktail') ||
+            name.contains('cocktail') ||
+            name.contains('bir') ||
+            name.contains('wine');
+      }).toList();
 
-    for (var order in orders) {
-      // Gunakan method isBarItem dari model OrderItem
-      final beverageItems = order.items.where((item) => item.isBarItem).toList();
-
-      if (beverageItems.isEmpty) continue;
+      if (beverageItems.isEmpty) return null;
 
       // Return order baru hanya dengan item minuman
-      filteredOrders.add(Order(
+      return Order(
         orderId: order.orderId,
         name: order.name,
         table: order.table,
@@ -284,13 +300,9 @@ class OrderService {
         service: order.service,
         orderType: order.orderType,
         reservationDateTime: order.reservationDateTime,
-        totalPrice: order.totalPrice,
-        source: order.source,
-        paymentMethod: order.paymentMethod,
-      ));
-    }
-
-    return filteredOrders;
+        totalPrice: order.totalPrice, source: '', paymentMethod: '',
+      );
+    }).where((order) => order != null).cast<Order>().toList();
   }
 
   // 📹 Refresh dan kategorikan order untuk KITCHEN
@@ -319,6 +331,7 @@ class OrderService {
             order.orderType?.toLowerCase() == 'reservation';
 
         if (isReservation) {
+          // Jika sudah status OnProcess atau Completed, masukkan ke preparing/completed
           if (status == 'onprocess') {
             preparing.add(order);
             if (kDebugMode) {
@@ -330,27 +343,42 @@ class OrderService {
             continue;
           }
 
+          // Cek apakah perlu dipindah ke preparation
           if (shouldMoveReservationToPreparation(order)) {
             if (kDebugMode) {
               print('🔄 Moving reservation ${order.orderId} to preparation');
+              print('   Time: ${order.reservationDateTime}');
             }
 
+            // Auto-update status jadi OnProcess
             bool updated = await updateOrderStatus(order.orderId!, 'OnProcess');
 
             if (updated) {
+              // Update status lokal
               order.status = 'OnProcess';
               preparing.add(order);
+              if (kDebugMode) {
+                print('✅ Successfully moved ${order.orderId} to preparation');
+              }
             } else {
+              // Jika gagal update, tetap di reservations
               reservations.add(order);
+              if (kDebugMode) {
+                print('❌ Failed to update ${order.orderId}, keeping in reservations');
+              }
             }
             continue;
           } else {
+            // Tetap di reservations
             reservations.add(order);
+            if (kDebugMode) {
+              print('⏰ Reservation ${order.orderId} not ready yet');
+            }
             continue;
           }
         }
 
-        // Kategorikan berdasarkan status
+        // Kategorikan berdasarkan status (non-reservation)
         switch (status) {
           case 'waiting':
           case 'pending':
@@ -365,13 +393,18 @@ class OrderService {
             completed.add(order);
             break;
           default:
+            if (kDebugMode) {
+              print('Order ${order.orderId} has unknown status: ${order.status}');
+            }
+            // Default ke pending untuk status unknown
             pending.add(order);
             break;
         }
       }
 
       if (kDebugMode) {
-        print('Kitchen orders: pending=${pending.length}, preparing=${preparing.length}, completed=${completed.length}, reservations=${reservations.length}');
+        print(
+            'Kitchen orders categorized: pending=${pending.length}, preparing=${preparing.length}, completed=${completed.length}, reservations=${reservations.length}');
       }
 
       return {
@@ -385,27 +418,20 @@ class OrderService {
     }
   }
 
-  // 📹 Refresh dan kategorikan order untuk BAR (FIXED VERSION)
+  // 📹 Refresh dan kategorikan order untuk BAR
   static Future<Map<String, List<Order>>> refreshBarOrders(String barType) async {
     try {
-
       List<Order> allOrders;
 
       // Coba ambil dari endpoint bar terlebih dahulu
       try {
         allOrders = await getBarOrders();
-        if (kDebugMode) {
-          print('✅ [BAR SERVICE] Fetched ${allOrders.length} orders from /api/orders/bar');
-        }
       } catch (e) {
-        // Fallback: ambil semua beverage orders
+        // Fallback: ambil semua beverage orders dan filter berdasarkan area
         if (kDebugMode) {
-          print('⚠️ [BAR SERVICE] Bar endpoint failed, using beverage endpoint: $e');
+          print('⚠️ Bar endpoint not available, using fallback: $e');
         }
         allOrders = await getAllBeverageOrders();
-        if (kDebugMode) {
-          print('✅ [BAR SERVICE] Fetched ${allOrders.length} orders from /api/orders/beverage');
-        }
       }
 
       // Filter berdasarkan area meja
@@ -427,6 +453,7 @@ class OrderService {
           continue;
         }
 
+        // Untuk bar, kita handle status yang berbeda
         switch (status) {
           case 'waiting':
           case 'pending':
@@ -445,9 +472,15 @@ class OrderService {
             completed.add(order);
             break;
           default:
+          // Default ke pending untuk status unknown
             pending.add(order);
             break;
         }
+      }
+
+      if (kDebugMode) {
+        print(
+            'Bar ($barType) orders categorized: pending=${pending.length}, preparing=${preparing.length}, ready=${ready.length}, completed=${completed.length}');
       }
 
       return {
@@ -457,9 +490,6 @@ class OrderService {
         'completed': completed,
       };
     } catch (e) {
-      if (kDebugMode) {
-        print('❌ [BAR SERVICE] Error: $e');
-      }
       throw Exception('Error refreshing bar orders: $e');
     }
   }
@@ -469,7 +499,7 @@ class OrderService {
     return await refreshKitchenOrders();
   }
 
-  // 📹 Complete order dengan items tertentu
+  // 📹 Complete order dengan items tertentu (untuk batch completion)
   static Future<bool> completeOrderWithItems(String orderId, List<String> completedItemIds, {String? completedBy}) async {
     try {
       final Map<String, dynamic> body = {

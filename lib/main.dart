@@ -20,7 +20,7 @@ class BarajaKitchenApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Baraja Bar',
+      title: 'Baraja Workstation',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
       home: const BarSelectionScreen(),

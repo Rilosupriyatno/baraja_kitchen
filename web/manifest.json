@@ -1,6 +1,6 @@
 {
-    "name": "baraja_kitchen",
-    "short_name": "baraja_kitchen",
+    "name": "baraja_workstation",
+    "short_name": "baraja_workstation",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#hexcode",

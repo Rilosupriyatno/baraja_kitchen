@@ -69,7 +69,8 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeader(),
-          if (widget.isExpanded) _buildExpandedContent(),
+          // if (widget.isExpanded)
+            _buildExpandedContent(),
         ],
       ),
     );
@@ -296,39 +297,40 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
             ],
           ),
 
-          if (widget.showTimer && !widget.isExpanded) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: _badgeColor,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: _cardColor.withOpacity(0.3),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.access_time,
-                    color: _cardColor,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'waktu pesanan ${widget.order.remainingText()}',
-                    style: TextStyle(
-                      color: _cardColor,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          // if (widget.showTimer && !widget.isExpanded) ...[
+    // if (widget.showTimer) ...[
+    //         const SizedBox(height: 12),
+    //         Container(
+    //           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    //           decoration: BoxDecoration(
+    //             color: _badgeColor,
+    //             borderRadius: BorderRadius.circular(8),
+    //             border: Border.all(
+    //               color: _cardColor.withOpacity(0.3),
+    //               width: 1,
+    //             ),
+    //           ),
+    //           child: Row(
+    //             mainAxisAlignment: MainAxisAlignment.center,
+    //             children: [
+    //               Icon(
+    //                 Icons.access_time,
+    //                 color: _cardColor,
+    //                 size: 16,
+    //               ),
+    //               const SizedBox(width: 6),
+    //               Text(
+    //                 'waktu pesanan ${widget.order.remainingText()}',
+    //                 style: TextStyle(
+    //                   color: _cardColor,
+    //                   fontSize: 13,
+    //                   fontWeight: FontWeight.w600,
+    //                 ),
+    //               ),
+    //             ],
+    //           ),
+    //         ),
+    //       ],
 
           const SizedBox(height: 16),
 
@@ -413,37 +415,37 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
             const SizedBox(height: 16),
           ],
 
-          SizedBox(
-            width: double.infinity,
-            height: 44,
-            child: OutlinedButton(
-              onPressed: widget.onToggleExpand,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: brandColor,
-                side: BorderSide(color: brandColor.withOpacity(0.3)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    widget.isExpanded ? 'Tutup Detail' : 'Lihat Detail',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    widget.isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                    size: 20,
-                  ),
-                ],
-              ),
-            ),
-          ),
+          // SizedBox(
+          //   width: double.infinity,
+          //   height: 44,
+          //   child: OutlinedButton(
+          //     onPressed: widget.onToggleExpand,
+          //     style: OutlinedButton.styleFrom(
+          //       foregroundColor: brandColor,
+          //       side: BorderSide(color: brandColor.withOpacity(0.3)),
+          //       shape: RoundedRectangleBorder(
+          //         borderRadius: BorderRadius.circular(8),
+          //       ),
+          //     ),
+          //     child: Row(
+          //       mainAxisAlignment: MainAxisAlignment.center,
+          //       children: [
+          //         Text(
+          //           widget.isExpanded ? 'Tutup Detail' : 'Lihat Detail',
+          //           style: const TextStyle(
+          //             fontSize: 15,
+          //             fontWeight: FontWeight.w600,
+          //           ),
+          //         ),
+          //         const SizedBox(width: 8),
+          //         Icon(
+          //           widget.isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+          //           size: 20,
+          //         ),
+          //       ],
+          //     ),
+          //   ),
+          // ),
         ],
       ),
     );

@@ -7,33 +7,6 @@ class StockmenuService {
   static String get baseUrl =>
       dotenv.env['BASE_URL'] ?? 'http://localhost:3000';
 
-  // 📹 Ambil semua order untuk kitchen
-  // static Future<List<StockMenu>> getStockMenu() async {
-  //   try {
-  //     final response = await http.get(
-  //       Uri.parse('$baseUrl/api/product/menu-stock/manual-stock'),
-  //       headers: {'Content-Type': 'application/json'},
-  //     );
-  //
-  //     if (response.statusCode == 200) {
-  //       final Map<String, dynamic> data = json.decode(response.body);
-  //
-  //       if (data['success'] == true && data['data'] != null) {
-  //         List<dynamic> menustockData = data['data'];
-  //         return menustockData
-  //             .map((menustockJson) => StockMenu.fromJson(menustockJson))
-  //             .toList();
-  //       } else {
-  //         throw Exception('Invalid response format');
-  //       }
-  //     } else {
-  //       throw Exception('Failed to load orders: ${response.statusCode}');
-  //     }
-  //   } catch (e) {
-  //     throw Exception('Error fetching orders: $e');
-  //   }
-  // }
-
   // services/api_service.dart
   static Future<List<StockMenu>> getStockMenuByWorkstation(String workstation) async {
     try {
