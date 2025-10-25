@@ -105,7 +105,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   Future<void> _loadStockMenu() async {
     setState(() => _isLoading = true);
     try {
-      final data = await StockmenuService.getStockMenuByWorkstation(
+      final data = await StockMenuService.getStockMenuByWorkstation(
         workstation,
       );
       setState(() {
