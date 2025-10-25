@@ -1,3 +1,4 @@
+// ignore: file_names
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../models/stock_menu.dart';

@@ -2,8 +2,10 @@
 import 'package:esc_pos_printer/esc_pos_printer.dart';
 import 'package:esc_pos_utils/esc_pos_utils.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:image/image.dart' as img;
 import '../models/order.dart';
 import 'package:intl/intl.dart';
 
@@ -24,6 +26,41 @@ class ThermalPrintService {
 
   // Track order yang sudah pernah diprint
   final Set<String> _printedOrders = <String>{};
+
+  // Cache logo image
+  img.Image? _logoImage;
+
+  /// Load logo image dari assets
+  Future<img.Image?> _loadLogo() async {
+    if (_logoImage != null) return _logoImage;
+
+    try {
+      final ByteData data = await rootBundle.load('assets/images/logo_print.webp');
+      final Uint8List bytes = data.buffer.asUint8List();
+
+      // Decode image
+      img.Image? image = img.decodeImage(bytes);
+
+      if (image != null) {
+        // Resize logo agar sesuai dengan lebar printer (max 384 pixels untuk 80mm)
+        // Sesuaikan size sesuai kebutuhan
+        if (image.width > 300) {
+          image = img.copyResize(image, width: 300);
+        }
+
+        _logoImage = image;
+        if (kDebugMode) {
+          print('Logo loaded successfully: ${image.width}x${image.height}');
+        }
+        return image;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error loading logo: $e');
+      }
+    }
+    return null;
+  }
 
   /// Set konfigurasi printer WiFi
   void configurePrinter(String ip, {int port = 9100}) {
@@ -149,11 +186,11 @@ class ThermalPrintService {
     }
 
     try {
-      print('Auto printing order ${order.orderId}'); // Log auto print
+      print('Auto printing order ${order.orderId}');
       final success = await printOrder(order);
       if (success) {
         _printedOrders.add(order.orderId ?? '');
-        print('Order ${order.orderId} berhasil diprint secara otomatis'); // Log print success
+        print('Order ${order.orderId} berhasil diprint secara otomatis');
       }
       return success;
     } catch (e) {
@@ -173,7 +210,7 @@ class ThermalPrintService {
     }
 
     try {
-      print('Printing order ${order.orderId}'); // Log manual print
+      print('Printing order ${order.orderId}');
       if (_connectionType == PrinterConnectionType.wifi) {
         return await _printViaWiFi(order);
       } else {
@@ -264,7 +301,9 @@ class ThermalPrintService {
   }
 
   /// Generate receipt untuk NetworkPrinter
+  /// Generate receipt untuk NetworkPrinter
   Future<void> _generateReceipt(NetworkPrinter printer, Order order) async {
+    // ===== HEADER =====
     printer.text(
       'BARAJA KITCHEN',
       styles: const PosStyles(
@@ -274,64 +313,76 @@ class ThermalPrintService {
         bold: true,
       ),
     );
-
+    printer.text(' ');
     printer.text(
       'ORDER DAPUR',
       styles: const PosStyles(align: PosAlign.center, bold: true),
     );
 
-    printer.hr();
-    printer.emptyLines(1);
+    printer.hr(ch: '-');
+    printer.text(' ');
 
+    // ===== DETAIL ORDER =====
     printer.row([
       PosColumn(text: 'Order ID:', width: 4, styles: const PosStyles(bold: true)),
       PosColumn(text: order.orderId ?? 'N/A', width: 8),
     ]);
+    printer.text(' ');
 
     printer.row([
       PosColumn(text: 'Nama:', width: 4, styles: const PosStyles(bold: true)),
       PosColumn(text: order.name, width: 8),
     ]);
+    printer.text(' ');
 
     printer.row([
       PosColumn(text: 'Meja:', width: 4, styles: const PosStyles(bold: true)),
       PosColumn(text: order.table, width: 8),
     ]);
+    printer.text(' ');
 
     printer.row([
       PosColumn(text: 'Tipe:', width: 4, styles: const PosStyles(bold: true)),
       PosColumn(text: order.service, width: 8),
     ]);
+    printer.text(' ');
 
     if (order.service.contains('Reservation') && order.reservationDate != null) {
       printer.row([
         PosColumn(text: 'Tanggal:', width: 4, styles: const PosStyles(bold: true)),
         PosColumn(text: order.reservationDate!, width: 8),
       ]);
+      printer.text(' ');
 
       printer.row([
         PosColumn(text: 'Jam:', width: 4, styles: const PosStyles(bold: true)),
         PosColumn(text: order.reservationTime ?? '-', width: 8),
       ]);
+      printer.text(' ');
     }
 
     printer.row([
       PosColumn(text: 'Waktu:', width: 4, styles: const PosStyles(bold: true)),
-      PosColumn(text: DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now()), width: 8),
+      PosColumn(
+        text: DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now()),
+        width: 8,
+      ),
     ]);
+    printer.text(' ');
 
-    printer.hr();
-    printer.emptyLines(1);
+    printer.hr(ch: '-');
+    printer.text(' ');
 
-    printer.text('PESANAN:', styles: const PosStyles(bold: true, underline: true));
-    printer.emptyLines(1);
+    // ===== DAFTAR PESANAN =====
+    printer.text(
+      'PESANAN:',
+      styles: const PosStyles(bold: true, underline: true),
+    );
+    printer.text(' ');
 
     for (var item in order.items) {
-      printer.row([
-        PosColumn(text: item.name, width: 8, styles: const PosStyles(bold: true)),
-        PosColumn(text: '${item.qty}x', width: 4,
-            styles: const PosStyles(bold: true, align: PosAlign.right)),
-      ]);
+      final itemNameWithService = '${item.name} (${order.service}) x${item.qty}';
+      printer.text(itemNameWithService, styles: const PosStyles(bold: true));
 
       if (item.addons != null && item.addons!.isNotEmpty) {
         for (var addon in item.addons!) {
@@ -352,44 +403,61 @@ class ThermalPrintService {
             styles: const PosStyles(fontType: PosFontType.fontB, bold: true));
       }
 
-      printer.emptyLines(1);
+      printer.text(' '); // jarak halus antar item
     }
 
-    printer.hr();
-    printer.emptyLines(1);
+    printer.hr(ch: '-');
+    printer.text(' ');
 
+    // ===== TOTAL =====
     final totalItems = order.items.fold(0, (sum, item) => sum + item.qty);
     printer.row([
       PosColumn(text: 'TOTAL ITEM:', width: 6, styles: const PosStyles(bold: true)),
-      PosColumn(text: '$totalItems', width: 6,
-          styles: const PosStyles(
-            bold: true,
-            align: PosAlign.right,
-            height: PosTextSize.size2,
-            width: PosTextSize.size2,
-          )),
+      PosColumn(
+        text: '$totalItems',
+        width: 6,
+        styles: const PosStyles(
+          bold: true,
+          align: PosAlign.right,
+          height: PosTextSize.size2,
+          width: PosTextSize.size2,
+        ),
+      ),
     ]);
 
-    printer.emptyLines(1);
-    printer.hr();
-    printer.emptyLines(2);
+    printer.text(' ');
+    printer.hr(ch: '-');
+    printer.text(' ');
 
-    printer.text('SIAPKAN DENGAN CERMAT',
-        styles: const PosStyles(align: PosAlign.center, bold: true));
-    printer.text('TARGET: 30 MENIT',
-        styles: const PosStyles(
-          align: PosAlign.center,
-          bold: true,
-          height: PosTextSize.size2,
-        ));
+    // ===== FOOTER =====
+    // printer.text(
+    //   'SIAPKAN DENGAN CERMAT',
+    //   styles: const PosStyles(align: PosAlign.center, bold: true),
+    // );
+    // printer.text(
+    //   'TARGET: 30 MENIT',
+    //   styles: const PosStyles(
+    //     align: PosAlign.center,
+    //     bold: true,
+    //     height: PosTextSize.size2,
+    //   ),
+    // );
 
-    printer.emptyLines(2);
+    printer.text(' ');
     printer.cut();
   }
+
 
   /// Generate receipt bytes untuk Bluetooth
   Future<List<int>> _generateReceiptBytes(Generator generator, Order order) async {
     final List<int> bytes = [];
+
+    // Print logo jika ada
+    // final logo = await _loadLogo();
+    // if (logo != null) {
+    //   bytes.addAll(generator.image(logo, align: PosAlign.center));
+    //   bytes.addAll(generator.emptyLines(1));
+    // }
 
     bytes.addAll(generator.text('BARAJA KITCHEN',
         styles: const PosStyles(
@@ -438,11 +506,10 @@ class ThermalPrintService {
     bytes.addAll(generator.emptyLines(1));
 
     for (var item in order.items) {
-      bytes.addAll(generator.row([
-        PosColumn(text: item.name, width: 8, styles: const PosStyles(bold: true)),
-        PosColumn(text: '${item.qty}x', width: 4,
-            styles: const PosStyles(bold: true, align: PosAlign.right)),
-      ]));
+      // Modifikasi: Tambahkan service type di samping nama menu
+      final itemNameWithService = '${item.name} (${order.service}) x${item.qty}';
+
+      bytes.addAll(generator.text(itemNameWithService, styles: const PosStyles(bold: true)));
 
       if (item.addons != null && item.addons!.isNotEmpty) {
         for (var addon in item.addons!) {
@@ -479,15 +546,15 @@ class ThermalPrintService {
           )),
     ]));
 
-    bytes.addAll(generator.emptyLines(2));
-    bytes.addAll(generator.text('SIAPKAN DENGAN CERMAT',
-        styles: const PosStyles(align: PosAlign.center, bold: true)));
-    bytes.addAll(generator.text('TARGET: 30 MENIT',
-        styles: const PosStyles(
-          align: PosAlign.center,
-          bold: true,
-          height: PosTextSize.size2,
-        )));
+    // bytes.addAll(generator.emptyLines(2));
+    // bytes.addAll(generator.text('SIAPKAN DENGAN CERMAT',
+    //     styles: const PosStyles(align: PosAlign.center, bold: true)));
+    // bytes.addAll(generator.text('TARGET: 30 MENIT',
+    //     styles: const PosStyles(
+    //       align: PosAlign.center,
+    //       bold: true,
+    //       height: PosTextSize.size2,
+    //     )));
 
     bytes.addAll(generator.emptyLines(2));
     bytes.addAll(generator.cut());
@@ -520,6 +587,13 @@ class ThermalPrintService {
       final result = await printer.connect(_printerIp!, port: _printerPort);
 
       if (result == PosPrintResult.success) {
+        // Print logo untuk test
+        // final logo = await _loadLogo();
+        // if (logo != null) {
+        //   printer.image(logo, align: PosAlign.center);
+        //   printer.emptyLines(1);
+        // }
+
         printer.text('TEST PRINTER',
             styles: const PosStyles(
               align: PosAlign.center,
@@ -562,6 +636,14 @@ class ThermalPrintService {
       final generator = Generator(PaperSize.mm80, profile);
 
       final bytes = <int>[];
+
+      // Print logo untuk test
+      // final logo = await _loadLogo();
+      // if (logo != null) {
+      //   bytes.addAll(generator.image(logo, align: PosAlign.center));
+      //   bytes.addAll(generator.emptyLines(1));
+      // }
+
       bytes.addAll(generator.text('TEST PRINTER',
           styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2)));
       bytes.addAll(generator.emptyLines(1));

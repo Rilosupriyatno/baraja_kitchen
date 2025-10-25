@@ -164,7 +164,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     try {
       // final ordersMap = await OrderService.refreshOrders();
       final ordersMap = widget.barType != null
-          ? await OrderService.refreshBarOrders()
+          ? await OrderService.refreshBarOrders(widget.barType!)
           : await OrderService.refreshKitchenOrders();
       await _mergeOrdersWithAlertState(ordersMap, isInitialLoad: true);
       setState(() {
@@ -182,7 +182,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     try {
       // final orderService = await OrderService.refreshOrders();
       final orderService = widget.barType != null
-          ? await OrderService.refreshBarOrders()
+          ? await OrderService.refreshBarOrders(widget.barType!)
           : await OrderService.refreshKitchenOrders();
       await _mergeOrdersWithAlertState(orderService);
     } catch (e) {

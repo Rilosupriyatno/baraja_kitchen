@@ -239,11 +239,11 @@ class OrderService {
   static List<Order> _filterOrdersByBarArea(List<Order> orders, String barType) {
 
     final filtered = orders.where((order) {
-      if (order.table == null || order.table!.isEmpty) {
+      if (order.table.isEmpty) {
         return false;
       }
 
-      final tableNumber = order.table!.toUpperCase();
+      final tableNumber = order.table.toUpperCase();
       final firstChar = tableNumber[0];
 
       bool match = false;

@@ -239,7 +239,7 @@ class _BarSelectionScreenState extends State<BarSelectionScreen> {
         children: [
           Expanded(
             child: _BarTypeCard(
-              title: _devices[0].deviceName ?? 'Device 1',
+              title: _devices[0].deviceName,
               icon: Icons.local_bar,
               isSelected: _selectedDeviceLocation == _devices[0].location,
               isOnline: _devices[0].isOnline,
@@ -255,7 +255,7 @@ class _BarSelectionScreenState extends State<BarSelectionScreen> {
           const SizedBox(width: 16),
           Expanded(
             child: _BarTypeCard(
-              title: _devices[1].deviceName ?? 'Device 2',
+              title: _devices[1].deviceName,
               icon: Icons.local_bar_outlined,
               isSelected: _selectedDeviceLocation == _devices[1].location,
               isOnline: _devices[1].isOnline,
@@ -293,7 +293,7 @@ class _BarSelectionScreenState extends State<BarSelectionScreen> {
         ];
 
         return _BarTypeCard(
-          title: device.deviceName ?? 'Device ${index + 1}',
+          title: device.deviceName,
           icon: icons[index % icons.length],
           isSelected: _selectedDeviceLocation == device.location,
           isOnline: device.isOnline,

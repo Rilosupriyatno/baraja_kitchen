@@ -248,9 +248,9 @@ class OrderService {
   // ✅ Helper: Filter order untuk bar berdasarkan area meja
   static List<Order> _filterOrdersByBarArea(List<Order> orders, String barType) {
     return orders.where((order) {
-      if (order.table == null || order.table!.isEmpty) return false;
+      if (order.table.isEmpty) return false;
 
-      final tableNumber = order.table!.toUpperCase();
+      final tableNumber = order.table.toUpperCase();
       final firstChar = tableNumber[0];
 
       if (barType == 'depan') {
