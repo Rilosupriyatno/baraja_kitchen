@@ -9,14 +9,14 @@ class MenuListScreen extends StatefulWidget {
   final String categoryName;
 
   const MenuListScreen({
-    Key? key,
+    super.key,
     required this.workstation,
     required this.categoryId,
     required this.categoryName,
-  }) : super(key: key);
+  });
 
   @override
-  _MenuListScreenState createState() => _MenuListScreenState();
+  State<MenuListScreen> createState() => _MenuListScreenState();
 }
 
 class _MenuListScreenState extends State<MenuListScreen> {
@@ -34,7 +34,9 @@ class _MenuListScreenState extends State<MenuListScreen> {
 
   @override
   void dispose() {
-    _stockControllers.values.forEach((controller) => controller.dispose());
+    for (var controller in _stockControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 

@@ -1,6 +1,7 @@
 // main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:wakelock_plus/wakelock_plus.dart'; // Tambahkan import ini
 import 'screens/bar_selection_screen.dart';
 
 import 'config/app_theme.dart';
@@ -10,6 +11,9 @@ void main() async {
 
   // Load environment variables
   await dotenv.load(fileName: ".env");
+
+  // Aktifkan wakelock agar device tidak sleep
+  WakelockPlus.enable();
 
   runApp(BarajaKitchenApp());
 }

@@ -64,6 +64,17 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   @override
   void initState() {
     super.initState();
+
+    // ===== TAMBAHKAN BARIS INI =====
+    _printService.setBarType(widget.barType);
+
+    // Debug (opsional, untuk testing)
+    if (kDebugMode) {
+      print('═══════════════════════════════════════════');
+      print('🔍 Dashboard barType: ${widget.barType}');
+      print('═══════════════════════════════════════════');
+    }
+
     _loadOrders();
     _loadStockMenu();
     _loadCategories();

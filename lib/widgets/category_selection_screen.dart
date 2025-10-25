@@ -7,10 +7,10 @@ import 'menu_list_screen.dart';
 class CategorySelectionScreen extends StatefulWidget {
   final String workstation;
 
-  const CategorySelectionScreen({Key? key, required this.workstation}) : super(key: key);
+  const CategorySelectionScreen({super.key, required this.workstation});
 
   @override
-  _CategorySelectionScreenState createState() => _CategorySelectionScreenState();
+  State<CategorySelectionScreen> createState() => _CategorySelectionScreenState();
 }
 
 class _CategorySelectionScreenState extends State<CategorySelectionScreen> {

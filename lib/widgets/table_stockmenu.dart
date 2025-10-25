@@ -1,7 +1,7 @@
   // widgets/stock_menu_table.dart
   import 'package:flutter/material.dart';
   import '../models/stock_menu.dart';
-  import 'updateStock.dart';
+  import 'update_stock.dart';
 
   class TableStockmenu extends StatelessWidget {
     final List<StockMenu> stockMenu;

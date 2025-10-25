@@ -84,8 +84,9 @@ class StockMenuService {
       Map<String, List<dynamic>> categoryMap = {};
       for (var item in filteredItems) {
         String categoryId = item['category']?['id']?.toString() ?? 'uncategorized';
+        // ignore: unused_local_variable
         String categoryName = item['category']?['name']?.toString() ?? 'Uncategorized';
-        
+
         if (!categoryMap.containsKey(categoryId)) {
           categoryMap[categoryId] = [];
         }
