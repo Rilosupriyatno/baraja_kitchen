@@ -434,7 +434,7 @@ class ThermalPrintService {
     }
 
     printer.text(
-      'BARAJA AMPHITHEATER',
+      'BARAJA AMPHI',
       styles: const PosStyles(
         align: PosAlign.center,
         height: PosTextSize.size2,
@@ -569,7 +569,7 @@ class ThermalPrintService {
   Future<List<int>> _generateReceiptBytes(Generator generator, Order order) async {
     final List<int> bytes = [];
 
-    bytes.addAll(generator.text('BARAJA AMPHITHEATER',
+    bytes.addAll(generator.text('BARAJA AMPHI',
         styles: const PosStyles(
           align: PosAlign.center,
           height: PosTextSize.size2,
@@ -1107,7 +1107,7 @@ class ThermalPrintService {
 //   Future<void> _generateReceipt(NetworkPrinter printer, Order order) async {
 //     // ===== HEADER =====
 //     printer.text(
-//       'BARAJA AMPHITHEATER',
+//       'BARAJA AMPHI',
 //       styles: const PosStyles(
 //         align: PosAlign.center,
 //         height: PosTextSize.size2,
@@ -1261,7 +1261,7 @@ class ThermalPrintService {
 //     //   bytes.addAll(generator.emptyLines(1));
 //     // }
 //
-//     bytes.addAll(generator.text('BARAJA AMPHITHEATER',
+//     bytes.addAll(generator.text('BARAJA AMPHI',
 //         styles: const PosStyles(
 //           align: PosAlign.center,
 //           height: PosTextSize.size2,
