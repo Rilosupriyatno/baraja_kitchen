@@ -144,7 +144,7 @@ class ThermalPrintService {
   /// Get printer health status
   String get printerHealthStatus {
     if (!isConfigured) return 'Not Configured';
-    if (_consecutiveFailures == 0) return 'Healthy';
+    if (_consecutiveFailures == 0) return 'healthy';
     if (_consecutiveFailures < _maxRetries) return 'Warning ($consecutiveFailures failures)';
     return 'Offline';
   }
