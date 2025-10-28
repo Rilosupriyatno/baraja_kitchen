@@ -1063,43 +1063,43 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
             ),
           ],
         ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(70),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            color: Colors.white,
-            child: TextField(
-              onChanged: (value) => setState(() => search = value.toLowerCase()),
-              style: const TextStyle(fontSize: 15),
-              decoration: InputDecoration(
-                hintText: widget.barType != null ? 'Cari pesanan minuman...' : 'Cari produk...',
-                hintStyle: TextStyle(color: Colors.grey.shade400),
-                prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
-                suffixIcon: search.isNotEmpty
-                    ? IconButton(
-                        icon: Icon(Icons.clear, color: Colors.grey.shade600),
-                        onPressed: () => setState(() => search = ''),
-                      )
-                    : null,
-                filled: true,
-                fillColor: Colors.grey.shade50,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey.shade200),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey.shade200),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: brandColor, width: 1.5),
-                ),
-              ),
-            ),
-          ),
-        ),
+        // bottom: PreferredSize(
+        //   preferredSize: const Size.fromHeight(70),
+        //   child: Container(
+        //     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        //     color: Colors.white,
+        //     child: TextField(
+        //       onChanged: (value) => setState(() => search = value.toLowerCase()),
+        //       style: const TextStyle(fontSize: 15),
+        //       decoration: InputDecoration(
+        //         hintText: widget.barType != null ? 'Cari pesanan minuman...' : 'Cari produk...',
+        //         hintStyle: TextStyle(color: Colors.grey.shade400),
+        //         prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
+        //         suffixIcon: search.isNotEmpty
+        //             ? IconButton(
+        //                 icon: Icon(Icons.clear, color: Colors.grey.shade600),
+        //                 onPressed: () => setState(() => search = ''),
+        //               )
+        //             : null,
+        //         filled: true,
+        //         fillColor: Colors.grey.shade50,
+        //         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        //         border: OutlineInputBorder(
+        //           borderRadius: BorderRadius.circular(8),
+        //           borderSide: BorderSide(color: Colors.grey.shade200),
+        //         ),
+        //         enabledBorder: OutlineInputBorder(
+        //           borderRadius: BorderRadius.circular(8),
+        //           borderSide: BorderSide(color: Colors.grey.shade200),
+        //         ),
+        //         focusedBorder: OutlineInputBorder(
+        //           borderRadius: BorderRadius.circular(8),
+        //           borderSide: const BorderSide(color: brandColor, width: 1.5),
+        //         ),
+        //       ),
+        //     ),
+        //   ),
+        // ),
       ),
       body: _isLoading
           ? _buildLoadingWidget()

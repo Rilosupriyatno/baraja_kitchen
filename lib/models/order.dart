@@ -415,15 +415,36 @@ class Order {
   }
 
   // ✅ Helper untuk menentukan bar type berdasarkan table number
+  // String? get barType {
+  //   if (table.isEmpty) return null;
+  //
+  //   final firstChar = table[0].toUpperCase();
+  //   if (firstChar.compareTo('A') >= 0 && firstChar.compareTo('I') <= 0) {
+  //     return 'depan';
+  //   } else if (firstChar.compareTo('J') >= 0 && firstChar.compareTo('Z') <= 0) {
+  //     return 'belakang';
+  //   }
+  //   return null;
+  // }
   String? get barType {
     if (table.isEmpty) return null;
-    
+
     final firstChar = table[0].toUpperCase();
+
+    // Cek apakah angka
+    if (RegExp(r'^[0-9]').hasMatch(table)) {
+      return 'depan'; // ✅ Meja angka masuk Bar Depan
+    }
+
+    // Cek huruf A-I
     if (firstChar.compareTo('A') >= 0 && firstChar.compareTo('I') <= 0) {
       return 'depan';
-    } else if (firstChar.compareTo('J') >= 0 && firstChar.compareTo('Z') <= 0) {
+    }
+    // Cek huruf J-Z
+    else if (firstChar.compareTo('J') >= 0 && firstChar.compareTo('Z') <= 0) {
       return 'belakang';
     }
+
     return null;
   }
 

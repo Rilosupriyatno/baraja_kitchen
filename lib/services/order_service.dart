@@ -249,7 +249,7 @@ class OrderService {
       bool match = false;
       if (barType == 'depan') {
         // Bar depan: meja A-I
-        match = firstChar.compareTo('A') >= 0 && firstChar.compareTo('I') <= 0;
+        match = RegExp(r'^[0-9]').hasMatch(firstChar) || firstChar.compareTo('A') >= 0 && firstChar.compareTo('I') <= 0;
       } else if (barType == 'belakang') {
         // Bar belakang: meja J-Z
         match = firstChar.compareTo('J') >= 0 && firstChar.compareTo('Z') <= 0;
