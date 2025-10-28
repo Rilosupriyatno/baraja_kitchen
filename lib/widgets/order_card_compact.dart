@@ -505,12 +505,22 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                 final List<String> extras = [];
                 if (item.addons != null && item.addons!.isNotEmpty) {
                   for (var addon in item.addons!) {
-                    extras.add(addon['name'] ?? '');
+                    String addonName = addon['name'] ?? '';
+                    if (addon['options'] != null) {
+                      for (var option in addon['options']) {
+                        extras.add('$addonName - ${option['label'] ?? ''}');
+                      }
+                    }
                   }
                 }
                 if (item.toppings != null && item.toppings!.isNotEmpty) {
-                  for (var topping in item.toppings!) {
-                    extras.add(topping['name'] ?? '');
+                  for (var addon in item.toppings!) {
+                    String addonName = addon['name'] ?? '';
+                    if (addon['options'] != null) {
+                      for (var option in addon['options']) {
+                        extras.add('$addonName - ${option['label'] ?? ''}');
+                      }
+                    }
                   }
                 }
 

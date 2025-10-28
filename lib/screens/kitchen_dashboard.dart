@@ -52,10 +52,11 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
   // Tentukan workstation berdasarkan barType
   String get workstation {
-    if (widget.barType == null) {
-      return 'kitchen';
-    } else {
+    // Hanya 'depan' dan 'belakang' yang bar, sisanya kitchen
+    if (widget.barType == 'depan' || widget.barType == 'belakang') {
       return 'bar';
+    } else {
+      return 'kitchen';
     }
   }
 
@@ -183,7 +184,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     });
 
     try {
-      final ordersMap = widget.barType != null
+      final ordersMap = (widget.barType == 'depan' || widget.barType == 'belakang')
           ? await OrderService.refreshBarOrders(widget.barType!)
           : await OrderService.refreshKitchenOrders();
       await _mergeOrdersWithAlertState(ordersMap, isInitialLoad: true);
@@ -200,7 +201,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
   Future<void> _refreshOrders() async {
     try {
-      final orderService = widget.barType != null
+      final orderService = (widget.barType == 'depan' || widget.barType == 'belakang')
           ? await OrderService.refreshBarOrders(widget.barType!)
           : await OrderService.refreshKitchenOrders();
       await _mergeOrdersWithAlertState(orderService);
@@ -698,7 +699,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
             _buildSidebarTab(1, 'Batch Cook', preparing.length),
             _buildSidebarTab(2, 'Selesai', done.length),
             _buildSidebarTab(3, 'Reservasi', reservations.length),
-            _buildSidebarTab(4, 'Stok', stockmenu.length),
+            // _buildSidebarTab(4, 'Stok', stockmenu.length),
             _buildSidebarTab(5, 'Stok by Kategori', categories.length),
           ],
         ),
@@ -857,9 +858,15 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       appBar: AppBar(
         elevation: 1,
         toolbarHeight: 70,
-        backgroundColor: widget.barType != null 
-            ? widget.barType == 'depan' ? Colors.blue[700] : Colors.orange[700] 
-            : brandColor,
+        // backgroundColor: widget.barType != null
+        //     ? widget.barType == 'depan' ? Colors.blue[700] : Colors.orange[700]
+        //     : brandColor,
+        // Di bagian AppBar backgroundColor (line ~859)
+        backgroundColor: widget.barType == 'depan'
+            ? Colors.blue[700]
+            : widget.barType == 'belakang'
+            ? Colors.orange[700]
+            : brandColor,  // Default untuk kitchen atau nilai lain
         title: Row(
           children: [
             Container(
@@ -885,7 +892,11 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.barType != null ? 'Bar Dashboard' : 'Kitchen Dashboard',
+                    widget.barType == 'depan'
+                        ? 'Bar Depan'
+                        : widget.barType == 'belakang'
+                        ? 'Bar Belakang'
+                        : 'Dapur Utama',
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w600,
@@ -894,9 +905,21 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
+                  // Text(
+                  //   widget.barType != null
+                  //       ? 'Bar ${widget.barType == 'depan' ? 'Depan' : 'Belakang'}'
+                  //       : 'Dapur Utama',
+                  //   style: const TextStyle(
+                  //     color: Colors.white70,
+                  //     fontSize: 12,
+                  //     fontWeight: FontWeight.w500,
+                  //   ),
+                  // ),
                   Text(
-                    widget.barType != null 
-                        ? 'Bar ${widget.barType == 'depan' ? 'Depan' : 'Belakang'}'
+                    widget.barType == 'depan'
+                        ? 'Bar Depan'
+                        : widget.barType == 'belakang'
+                        ? 'Bar Belakang'
                         : 'Dapur Utama',
                     style: const TextStyle(
                       color: Colors.white70,
@@ -912,35 +935,79 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               margin: const EdgeInsets.only(right: 12),
+              // decoration: BoxDecoration(
+              //   color: widget.barType != null
+              //       ? widget.barType == 'depan' ? Colors.blue[50] : Colors.orange[50]
+              //       : Colors.white,
+              //   borderRadius: BorderRadius.circular(20),
+              //   border: Border.all(
+              //     color: widget.barType != null
+              //         ? widget.barType == 'depan' ? Colors.blue[300]! : Colors.orange[300]!
+              //         : brandColor
+              //   ),
+              // ),
               decoration: BoxDecoration(
-                color: widget.barType != null 
-                    ? widget.barType == 'depan' ? Colors.blue[50] : Colors.orange[50] 
+                color: widget.barType == 'depan'
+                    ? Colors.blue[50]
+                    : widget.barType == 'belakang'
+                    ? Colors.orange[50]
                     : Colors.white,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: widget.barType != null 
-                      ? widget.barType == 'depan' ? Colors.blue[300]! : Colors.orange[300]! 
-                      : brandColor
+                  color: widget.barType == 'depan'
+                      ? Colors.blue[300]!
+                      : widget.barType == 'belakang'
+                      ? Colors.orange[300]!
+                      : brandColor,
                 ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Icon(
+                  //   widget.barType != null ? Icons.local_bar : Icons.restaurant,
+                  //   size: 14,
+                  //   color: widget.barType != null
+                  //       ? widget.barType == 'depan' ? Colors.blue[700] : Colors.orange[700]
+                  //       : brandColor
+                  // ),
                   Icon(
-                    widget.barType != null ? Icons.local_bar : Icons.restaurant,
+                    widget.barType == 'depan'
+                        ? Icons.local_bar
+                        : widget.barType == 'belakang'
+                        ? Icons.local_bar
+                        : Icons.restaurant,
                     size: 14,
-                    color: widget.barType != null 
-                        ? widget.barType == 'depan' ? Colors.blue[700] : Colors.orange[700] 
-                        : brandColor
+                    color: widget.barType == 'depan'
+                        ? Colors.blue[700]
+                        : widget.barType == 'belakang'
+                        ? Colors.orange[700]
+                        : brandColor,
                   ),
                   const SizedBox(width: 4),
+                  // Text(
+                  //   widget.barType != null
+                  //       ? widget.barType == 'depan' ? 'Depan' : 'Belakang'
+                  //       : 'Dapur',
+                  //   style: TextStyle(
+                  //     color: widget.barType != null
+                  //         ? widget.barType == 'depan' ? Colors.blue[900] : Colors.orange[900]
+                  //         : brandColor,
+                  //     fontSize: 11,
+                  //     fontWeight: FontWeight.w600,
+                  //   ),
+                  // ),
                   Text(
-                    widget.barType != null 
-                        ? widget.barType == 'depan' ? 'Depan' : 'Belakang' 
+                    widget.barType == 'depan'
+                        ? 'Depan'
+                        : widget.barType == 'belakang'
+                        ? 'Belakang'
                         : 'Dapur',
                     style: TextStyle(
-                      color: widget.barType != null 
-                          ? widget.barType == 'depan' ? Colors.blue[900] : Colors.orange[900] 
+                      color: widget.barType == 'depan'
+                          ? Colors.blue[900]
+                          : widget.barType == 'belakang'
+                          ? Colors.orange[900]
                           : brandColor,
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
