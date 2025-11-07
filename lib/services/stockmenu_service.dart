@@ -14,7 +14,7 @@ class StockMenuService {
     try {
       // Fetch menu items untuk mendapatkan workstation info
       final menuItemsResponse = await http.get(
-        Uri.parse('$baseUrl/api/menu/menu-items'),
+        Uri.parse('$baseUrl/api/menu/all-menu-items-backoffice'),
         headers: {'Content-Type': 'application/json'},
       );
 

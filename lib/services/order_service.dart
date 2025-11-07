@@ -180,9 +180,9 @@ class OrderService {
 
       return response.statusCode == 200;
     } catch (e) {
-      if (kDebugMode) {
-        print('Error starting beverage order: $e');
-      }
+      // if (kDebugMode) {
+      //   print('Error starting beverage order: $e');
+      // }
       return false;
     }
   }
@@ -208,9 +208,9 @@ class OrderService {
 
       return response.statusCode == 200;
     } catch (e) {
-      if (kDebugMode) {
-        print('Error completing beverage order: $e');
-      }
+      // if (kDebugMode) {
+      //   print('Error completing beverage order: $e');
+      // }
       return false;
     }
   }
@@ -225,12 +225,12 @@ class OrderService {
     final diff = reservationTime.difference(now);
     final diffInMinutes = diff.inMinutes;
 
-    if (kDebugMode) {
-      print('🕐 Checking reservation ${order.orderId}:');
-      print('   Current time: $now');
-      print('   Reservation time: $reservationTime');
-      print('   Difference: $diffInMinutes minutes');
-    }
+    // if (kDebugMode) {
+    //   print('🕐 Checking reservation ${order.orderId}:');
+    //   print('   Current time: $now');
+    //   print('   Reservation time: $reservationTime');
+    //   print('   Difference: $diffInMinutes minutes');
+    // }
 
     return diffInMinutes <= 30 && diffInMinutes >= -60;
   }
@@ -249,7 +249,9 @@ class OrderService {
       bool match = false;
       if (barType == 'depan') {
         // Bar depan: meja A-I
-        match = RegExp(r'^[0-9]').hasMatch(firstChar) || firstChar.compareTo('A') >= 0 && firstChar.compareTo('I') <= 0;
+        // match = RegExp(r'^[0-9]').hasMatch(firstChar) || firstChar.compareTo('A') >= 0 && firstChar.compareTo('I') <= 0;
+        // match = firstChar.isEmpty || RegExp(r'^[0-9A-Ia-z]').hasMatch(firstChar);
+        match = firstChar.isEmpty || firstChar.length == 0 || RegExp(r'^[0-9A-Za-z]').hasMatch(firstChar);
       } else if (barType == 'belakang') {
         // Bar belakang: meja J-Z
         match = firstChar.compareTo('J') >= 0 && firstChar.compareTo('Z') <= 0;
@@ -308,9 +310,9 @@ class OrderService {
 
         // Skip cancelled/paid
         if (status == 'cancelled' || status == 'paid') {
-          if (kDebugMode) {
-            print('Order ${order.orderId} has status: ${order.status} - skipping');
-          }
+          // if (kDebugMode) {
+          //   print('Order ${order.orderId} has status: ${order.status} - skipping');
+          // }
           continue;
         }
 
@@ -321,9 +323,9 @@ class OrderService {
         if (isReservation) {
           if (status == 'onprocess') {
             preparing.add(order);
-            if (kDebugMode) {
-              print('✅ Reservation ${order.orderId} already in preparation');
-            }
+            // if (kDebugMode) {
+            //   print('✅ Reservation ${order.orderId} already in preparation');
+            // }
             continue;
           } else if (status == 'completed') {
             completed.add(order);
@@ -331,9 +333,9 @@ class OrderService {
           }
 
           if (shouldMoveReservationToPreparation(order)) {
-            if (kDebugMode) {
-              print('🔄 Moving reservation ${order.orderId} to preparation');
-            }
+            // if (kDebugMode) {
+            //   print('🔄 Moving reservation ${order.orderId} to preparation');
+            // }
 
             bool updated = await updateOrderStatus(order.orderId!, 'OnProcess');
 
@@ -370,9 +372,9 @@ class OrderService {
         }
       }
 
-      if (kDebugMode) {
-        print('Kitchen orders: pending=${pending.length}, preparing=${preparing.length}, completed=${completed.length}, reservations=${reservations.length}');
-      }
+      // if (kDebugMode) {
+      //   print('Kitchen orders: pending=${pending.length}, preparing=${preparing.length}, completed=${completed.length}, reservations=${reservations.length}');
+      // }
 
       return {
         'pending': pending,
@@ -394,18 +396,18 @@ class OrderService {
       // Coba ambil dari endpoint bar terlebih dahulu
       try {
         allOrders = await getBarOrders();
-        if (kDebugMode) {
-          print('✅ [BAR SERVICE] Fetched ${allOrders.length} orders from /api/orders/bar');
-        }
+        // if (kDebugMode) {
+        //   print('✅ [BAR SERVICE] Fetched ${allOrders.length} orders from /api/orders/bar');
+        // }
       } catch (e) {
         // Fallback: ambil semua beverage orders
-        if (kDebugMode) {
-          print('⚠️ [BAR SERVICE] Bar endpoint failed, using beverage endpoint: $e');
-        }
+        // if (kDebugMode) {
+        //   print('⚠️ [BAR SERVICE] Bar endpoint failed, using beverage endpoint: $e');
+        // }
         allOrders = await getAllBeverageOrders();
-        if (kDebugMode) {
-          print('✅ [BAR SERVICE] Fetched ${allOrders.length} orders from /api/orders/beverage');
-        }
+        // if (kDebugMode) {
+        //   print('✅ [BAR SERVICE] Fetched ${allOrders.length} orders from /api/orders/beverage');
+        // }
       }
 
       // Filter berdasarkan area meja
@@ -457,9 +459,9 @@ class OrderService {
         'completed': completed,
       };
     } catch (e) {
-      if (kDebugMode) {
-        print('❌ [BAR SERVICE] Error: $e');
-      }
+      // if (kDebugMode) {
+      //   print('❌ [BAR SERVICE] Error: $e');
+      // }
       throw Exception('Error refreshing bar orders: $e');
     }
   }
@@ -490,9 +492,9 @@ class OrderService {
 
       return response.statusCode == 200;
     } catch (e) {
-      if (kDebugMode) {
-        print('Error completing order with items: $e');
-      }
+      // if (kDebugMode) {
+      //   print('Error completing order with items: $e');
+      // }
       return false;
     }
   }
@@ -516,9 +518,9 @@ class OrderService {
       }
       return null;
     } catch (e) {
-      if (kDebugMode) {
-        print('Error getting order by ID: $e');
-      }
+      // if (kDebugMode) {
+      //   print('Error getting order by ID: $e');
+      // }
       return null;
     }
   }
