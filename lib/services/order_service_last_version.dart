@@ -180,9 +180,9 @@ class OrderService {
 
       return response.statusCode == 200;
     } catch (e) {
-      // if (kDebugMode) {
-      //   print('Error starting beverage order: $e');
-      // }
+      if (kDebugMode) {
+        print('Error starting beverage order: $e');
+      }
       return false;
     }
   }
@@ -208,165 +208,54 @@ class OrderService {
 
       return response.statusCode == 200;
     } catch (e) {
-      // if (kDebugMode) {
-      //   print('Error completing beverage order: $e');
-      // }
+      if (kDebugMode) {
+        print('Error completing beverage order: $e');
+      }
       return false;
     }
   }
 
-// ✅ Helper: Check apakah reservasi sudah waktunya dipindah ke penyiapan
+  // ✅ Helper: Check apakah reservasi sudah waktunya dipindah ke penyiapan
   static bool shouldMoveReservationToPreparation(Order order) {
-    if (order.reservationData == null) return false;
-
-    final now = DateTime.now();
-    final reservationData = order.reservationData!;
-
-    // 🎯 Cek food_serving_option
-    final servingOption = reservationData['food_serving_option'] ?? 'immediate';
-
-    if (servingOption == 'scheduled') {
-      // ✅ SCHEDULED: Gunakan food_serving_time sebagai patokan
-      final servingTimeStr = reservationData['food_serving_time'];
-      if (servingTimeStr == null) {
-        if (kDebugMode) {
-          print('⚠️ Scheduled reservation ${order.orderId} has no food_serving_time, fallback to immediate');
-        }
-        // Fallback ke immediate jika tidak ada food_serving_time
-        return _checkImmediatePreparation(order, now);
-      }
-
-      try {
-        final servingTime = DateTime.parse(servingTimeStr);
-        final diffInMinutes = servingTime.difference(now).inMinutes;
-
-        if (kDebugMode) {
-          print('📅 [SCHEDULED] Checking reservation ${order.orderId}:');
-          print('   Current time: $now');
-          print('   Food serving time: $servingTime');
-          print('   Difference: $diffInMinutes minutes');
-        }
-
-        // Mulai persiapan 30 menit sebelum food_serving_time
-        return diffInMinutes <= 30 && diffInMinutes >= -60;
-      } catch (e) {
-        if (kDebugMode) {
-          print('❌ Error parsing food_serving_time: $e');
-        }
-        return false;
-      }
-    } else {
-      // ✅ IMMEDIATE: Gunakan reservation_time sebagai patokan (default behavior)
-      return _checkImmediatePreparation(order, now);
-    }
-  }
-
-// 🆕 Helper untuk cek immediate preparation
-  static bool _checkImmediatePreparation(Order order, DateTime now) {
     if (order.reservationDateTime == null) return false;
 
+    final now = DateTime.now();
     final reservationTime = order.reservationDateTime!;
-    final diffInMinutes = reservationTime.difference(now).inMinutes;
+
+    final diff = reservationTime.difference(now);
+    final diffInMinutes = diff.inMinutes;
 
     if (kDebugMode) {
-      print('⚡ [IMMEDIATE] Checking reservation ${order.orderId}:');
+      print('🕐 Checking reservation ${order.orderId}:');
       print('   Current time: $now');
       print('   Reservation time: $reservationTime');
       print('   Difference: $diffInMinutes minutes');
     }
 
-    // Mulai persiapan 30 menit sebelum reservation_time
     return diffInMinutes <= 30 && diffInMinutes >= -60;
-  }
-
-// 🆕 Helper: Get preparation start time untuk display
-  static DateTime? getPreparationStartTime(Order order) {
-    if (order.reservationData == null) return null;
-
-    final reservationData = order.reservationData!;
-    final servingOption = reservationData['food_serving_option'] ?? 'immediate';
-
-    if (servingOption == 'scheduled') {
-      final servingTimeStr = reservationData['food_serving_time'];
-      if (servingTimeStr != null) {
-        try {
-          final servingTime = DateTime.parse(servingTimeStr);
-          // 30 menit sebelum serving time
-          return servingTime.subtract(const Duration(minutes: 30));
-        } catch (e) {
-          // Fallback ke reservation time
-          return order.reservationDateTime?.subtract(const Duration(minutes: 30));
-        }
-      }
-    }
-
-    // Default: 30 menit sebelum reservation time
-    return order.reservationDateTime?.subtract(const Duration(minutes: 30));
-  }
-
-// 🆕 Helper: Get countdown text untuk reservasi
-  static String getReservationCountdownText(Order order) {
-    final prepStartTime = getPreparationStartTime(order);
-    if (prepStartTime == null) return '-';
-
-    final now = DateTime.now();
-    final diff = prepStartTime.difference(now);
-
-    if (diff.isNegative) {
-      // Sudah waktunya mulai persiapan
-      if (order.reservationData?['food_serving_option'] == 'scheduled') {
-        final servingTimeStr = order.reservationData?['food_serving_time'];
-        if (servingTimeStr != null) {
-          try {
-            final servingTime = DateTime.parse(servingTimeStr);
-            final servingDiff = servingTime.difference(now);
-
-            if (servingDiff.isNegative) {
-              return 'Sudah lewat waktu serving';
-            }
-
-            final hours = servingDiff.inHours;
-            final minutes = servingDiff.inMinutes.remainder(60);
-            return 'Serving dalam ${hours > 0 ? '$hours jam ' : ''}$minutes menit';
-          } catch (e) {
-            return 'Waktunya mulai persiapan';
-          }
-        }
-      }
-      return 'Waktunya mulai persiapan';
-    }
-
-    final hours = diff.inHours;
-    final minutes = diff.inMinutes.remainder(60);
-
-    if (hours > 0) {
-      return 'Mulai persiapan dalam $hours jam $minutes menit';
-    } else {
-      return 'Mulai persiapan dalam $minutes menit';
-    }
   }
 
   // ✅ Helper: Filter order untuk bar berdasarkan area meja
   static List<Order> _filterOrdersByBarArea(List<Order> orders, String barType) {
+
     final filtered = orders.where((order) {
-      // ✅ Order tanpa table (takeaway/pickup/delivery) hanya di bar depan
       if (order.table.isEmpty) {
-        return barType == 'depan'; // ❌ Hanya tampilkan di bar depan
+        return false;
       }
 
       final tableNumber = order.table.toUpperCase();
       final firstChar = tableNumber[0];
 
+      bool match = false;
       if (barType == 'depan') {
-        // Bar depan: meja A-I dan angka
-        return (firstChar.compareTo('A') >= 0 && firstChar.compareTo('I') <= 0) ||
-            RegExp(r'^[0-9]').hasMatch(firstChar);
+        // Bar depan: meja A-I
+        match = firstChar.compareTo('A') >= 0 && firstChar.compareTo('I') <= 0;
       } else if (barType == 'belakang') {
-        // Bar belakang: hanya meja J-Z
-        return firstChar.compareTo('J') >= 0 && firstChar.compareTo('Z') <= 0;
+        // Bar belakang: meja J-Z
+        match = firstChar.compareTo('J') >= 0 && firstChar.compareTo('Z') <= 0;
       }
 
-      return false;
+      return match;
     }).toList();
 
     return filtered;
@@ -419,9 +308,9 @@ class OrderService {
 
         // Skip cancelled/paid
         if (status == 'cancelled' || status == 'paid') {
-          // if (kDebugMode) {
-          //   print('Order ${order.orderId} has status: ${order.status} - skipping');
-          // }
+          if (kDebugMode) {
+            print('Order ${order.orderId} has status: ${order.status} - skipping');
+          }
           continue;
         }
 
@@ -432,9 +321,9 @@ class OrderService {
         if (isReservation) {
           if (status == 'onprocess') {
             preparing.add(order);
-            // if (kDebugMode) {
-            //   print('✅ Reservation ${order.orderId} already in preparation');
-            // }
+            if (kDebugMode) {
+              print('✅ Reservation ${order.orderId} already in preparation');
+            }
             continue;
           } else if (status == 'completed') {
             completed.add(order);
@@ -442,9 +331,9 @@ class OrderService {
           }
 
           if (shouldMoveReservationToPreparation(order)) {
-            // if (kDebugMode) {
-            //   print('🔄 Moving reservation ${order.orderId} to preparation');
-            // }
+            if (kDebugMode) {
+              print('🔄 Moving reservation ${order.orderId} to preparation');
+            }
 
             bool updated = await updateOrderStatus(order.orderId!, 'OnProcess');
 
@@ -481,9 +370,9 @@ class OrderService {
         }
       }
 
-      // if (kDebugMode) {
-      //   print('Kitchen orders: pending=${pending.length}, preparing=${preparing.length}, completed=${completed.length}, reservations=${reservations.length}');
-      // }
+      if (kDebugMode) {
+        print('Kitchen orders: pending=${pending.length}, preparing=${preparing.length}, completed=${completed.length}, reservations=${reservations.length}');
+      }
 
       return {
         'pending': pending,
@@ -505,18 +394,18 @@ class OrderService {
       // Coba ambil dari endpoint bar terlebih dahulu
       try {
         allOrders = await getBarOrders();
-        // if (kDebugMode) {
-        //   print('✅ [BAR SERVICE] Fetched ${allOrders.length} orders from /api/orders/bar');
-        // }
+        if (kDebugMode) {
+          print('✅ [BAR SERVICE] Fetched ${allOrders.length} orders from /api/orders/bar');
+        }
       } catch (e) {
         // Fallback: ambil semua beverage orders
-        // if (kDebugMode) {
-        //   print('⚠️ [BAR SERVICE] Bar endpoint failed, using beverage endpoint: $e');
-        // }
+        if (kDebugMode) {
+          print('⚠️ [BAR SERVICE] Bar endpoint failed, using beverage endpoint: $e');
+        }
         allOrders = await getAllBeverageOrders();
-        // if (kDebugMode) {
-        //   print('✅ [BAR SERVICE] Fetched ${allOrders.length} orders from /api/orders/beverage');
-        // }
+        if (kDebugMode) {
+          print('✅ [BAR SERVICE] Fetched ${allOrders.length} orders from /api/orders/beverage');
+        }
       }
 
       // Filter berdasarkan area meja
@@ -568,9 +457,9 @@ class OrderService {
         'completed': completed,
       };
     } catch (e) {
-      // if (kDebugMode) {
-      //   print('❌ [BAR SERVICE] Error: $e');
-      // }
+      if (kDebugMode) {
+        print('❌ [BAR SERVICE] Error: $e');
+      }
       throw Exception('Error refreshing bar orders: $e');
     }
   }
@@ -601,9 +490,9 @@ class OrderService {
 
       return response.statusCode == 200;
     } catch (e) {
-      // if (kDebugMode) {
-      //   print('Error completing order with items: $e');
-      // }
+      if (kDebugMode) {
+        print('Error completing order with items: $e');
+      }
       return false;
     }
   }
@@ -627,9 +516,9 @@ class OrderService {
       }
       return null;
     } catch (e) {
-      // if (kDebugMode) {
-      //   print('Error getting order by ID: $e');
-      // }
+      if (kDebugMode) {
+        print('Error getting order by ID: $e');
+      }
       return null;
     }
   }

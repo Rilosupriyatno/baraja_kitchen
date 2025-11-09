@@ -186,7 +186,7 @@ class _CreateMenuScreenState extends State<CreateMenuScreen> {
         workstation: 'bar',
       );
 
-      bool success = await _menuService.createMenuItem(menuItem);
+      bool success = (await _menuService.createMenuItem(menuItem)) as bool;
 
       if (success && mounted) {
         Navigator.pop(context, {

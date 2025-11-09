@@ -80,12 +80,12 @@ class OrderItem {
     if (workstation != null) {
       return workstation == 'kitchen';
     }
-    
+
     // Priority 2: Check mainCategory
     if (mainCategory != null) {
       return mainCategory == 'makanan';
     }
-    
+
     // Priority 3: Check by name as fallback
     final nameLower = name.toLowerCase();
     return !nameLower.contains('jus') &&
@@ -109,12 +109,12 @@ class OrderItem {
     if (workstation != null) {
       return workstation == 'bar';
     }
-    
+
     // Priority 2: Check mainCategory
     if (mainCategory != null) {
       return mainCategory == 'minuman';
     }
-    
+
     // Priority 3: Check by name as fallback
     final nameLower = name.toLowerCase();
     return nameLower.contains('jus') ||
@@ -165,6 +165,10 @@ class Order {
   final String? cashierId;
   final String? userId;
 
+  // 🆕 Tambahan untuk serving option
+  final String? servingOption;
+  final DateTime? foodServingTime;
+
   Order({
     this.orderId,
     required this.name,
@@ -185,6 +189,8 @@ class Order {
     this.outletId,
     this.cashierId,
     this.userId,
+    this.servingOption,
+    this.foodServingTime,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -201,7 +207,7 @@ class Order {
 
     // Parse table number
     String tableNum = json['tableNumber'] ?? '';
-    
+
     // Handle reservation table number
     if (tableNum.isEmpty && serviceType == 'Reservation') {
       try {
@@ -224,7 +230,7 @@ class Order {
     // Parse dates
     DateTime? createdAt;
     DateTime? updatedAt;
-    
+
     try {
       if (json['createdAt'] != null) {
         createdAt = DateTime.parse(json['createdAt']);
@@ -250,6 +256,8 @@ class Order {
     String? reservationTime;
     DateTime? reservationDateTime;
     Map<String, dynamic>? reservationData;
+    String? servingOption;
+    DateTime? foodServingTime;
 
     if (json['reservation'] != null) {
       final reservation = json['reservation'];
@@ -257,6 +265,18 @@ class Order {
 
       // Handle reservation date and time
       if (reservation is Map) {
+        // 🆕 Parse serving option
+        servingOption = reservation['food_serving_option']?.toString() ?? 'immediate';
+
+        // 🆕 Parse food serving time
+        if (reservation['food_serving_time'] != null) {
+          try {
+            foodServingTime = DateTime.parse(reservation['food_serving_time']);
+          } catch (e) {
+            // ignore parsing error
+          }
+        }
+
         final rawDate = reservation['reservation_date'];
         reservationTime = reservation['reservation_time'];
 
@@ -298,7 +318,7 @@ class Order {
       // Calculate from items as fallback
       totalPrice = itemsList.fold<double>(
         0.0,
-        (double sum, OrderItem item) => sum + (item.subtotal ?? 0.0),
+            (double sum, OrderItem item) => sum + (item.subtotal ?? 0.0),
       );
     }
 
@@ -322,6 +342,8 @@ class Order {
       outletId: json['outlet']?.toString(),
       cashierId: json['cashierId']?.toString(),
       userId: json['user_id']?.toString(),
+      servingOption: servingOption,
+      foodServingTime: foodServingTime,
     );
   }
 
@@ -360,7 +382,7 @@ class Order {
     if (updatedAt == null) return '0 menit';
     final now = DateTime.now();
     final diff = now.difference(updatedAt!);
-    
+
     if (diff.inHours > 0) {
       return '${diff.inHours} jam ${diff.inMinutes.remainder(60)} menit';
     } else {
@@ -368,25 +390,94 @@ class Order {
     }
   }
 
-  // ✅ Helper untuk tampilan countdown reservasi
+  // ✅ Updated helper untuk countdown reservasi dengan serving option
   String reservationCountdown() {
-    if (reservationDateTime == null) return '-';
+    if (servingOption == 'scheduled' && foodServingTime != null) {
+      // 🎯 SCHEDULED: Hitung berdasarkan food_serving_time - 30 menit
+      final now = DateTime.now();
+      final prepStartTime = foodServingTime!.subtract(const Duration(minutes: 30));
+      final diff = prepStartTime.difference(now);
 
-    final now = DateTime.now();
-    final diff = reservationDateTime!.difference(now);
+      if (diff.isNegative) {
+        // Sudah lewat waktu mulai persiapan, hitung ke serving time
+        final servingDiff = foodServingTime!.difference(now);
 
-    if (diff.isNegative) {
-      return 'Sudah lewat';
-    }
+        if (servingDiff.isNegative) {
+          return 'Sudah lewat waktu serving';
+        }
 
-    final hours = diff.inHours;
-    final minutes = diff.inMinutes.remainder(60);
+        final hours = servingDiff.inHours;
+        final minutes = servingDiff.inMinutes.remainder(60);
+        return 'Serving dalam ${hours > 0 ? '$hours jam ' : ''}$minutes menit';
+      }
 
-    if (hours > 0) {
-      return '$hours jam $minutes menit lagi';
+      final hours = diff.inHours;
+      final minutes = diff.inMinutes.remainder(60);
+
+      if (hours > 0) {
+        return 'Mulai prep dalam $hours jam $minutes menit';
+      } else {
+        return 'Mulai prep dalam $minutes menit';
+      }
     } else {
-      return '$minutes menit lagi';
+      // ✅ IMMEDIATE: Hitung berdasarkan reservation_time - 30 menit (default)
+      if (reservationDateTime == null) return '-';
+
+      final now = DateTime.now();
+      final prepStartTime = reservationDateTime!.subtract(const Duration(minutes: 30));
+      final diff = prepStartTime.difference(now);
+
+      if (diff.isNegative) {
+        return 'Sudah waktunya';
+      }
+
+      final hours = diff.inHours;
+      final minutes = diff.inMinutes.remainder(60);
+
+      if (hours > 0) {
+        return '$hours jam $minutes menit lagi';
+      } else {
+        return '$minutes menit lagi';
+      }
     }
+  }
+
+  // 🆕 Helper untuk mendapatkan waktu target serving
+  DateTime? get targetServingTime {
+    if (servingOption == 'scheduled' && foodServingTime != null) {
+      return foodServingTime;
+    }
+    return reservationDateTime;
+  }
+
+  // 🆕 Helper untuk mendapatkan waktu mulai persiapan
+  DateTime? get preparationStartTime {
+    final target = targetServingTime;
+    if (target == null) return null;
+    return target.subtract(const Duration(minutes: 30));
+  }
+
+  // 🆕 Helper untuk cek apakah sudah waktunya mulai persiapan
+  bool get shouldStartPreparation {
+    final prepStart = preparationStartTime;
+    if (prepStart == null) return false;
+    return DateTime.now().isAfter(prepStart);
+  }
+
+  // 🆕 Helper untuk mendapatkan formatted serving time
+  String get formattedServingTime {
+    if (servingOption == 'scheduled' && foodServingTime != null) {
+      return '${foodServingTime!.hour.toString().padLeft(2, '0')}:${foodServingTime!.minute.toString().padLeft(2, '0')}';
+    }
+    return reservationTime ?? '-';
+  }
+
+  // 🆕 Helper untuk mendapatkan serving option display text
+  String get servingOptionDisplay {
+    if (servingOption == 'scheduled') {
+      return 'Terjadwal';
+    }
+    return 'Langsung';
   }
 
   // ✅ Helper untuk cek apakah order ini untuk kitchen (berdasarkan workstation)
@@ -415,17 +506,6 @@ class Order {
   }
 
   // ✅ Helper untuk menentukan bar type berdasarkan table number
-  // String? get barType {
-  //   if (table.isEmpty) return null;
-  //
-  //   final firstChar = table[0].toUpperCase();
-  //   if (firstChar.compareTo('A') >= 0 && firstChar.compareTo('I') <= 0) {
-  //     return 'depan';
-  //   } else if (firstChar.compareTo('J') >= 0 && firstChar.compareTo('Z') <= 0) {
-  //     return 'belakang';
-  //   }
-  //   return null;
-  // }
   String? get barType {
     if (table.isEmpty) return null;
 
@@ -451,12 +531,12 @@ class Order {
   // ✅ Get workstation distribution summary
   Map<String, int> get workstationSummary {
     final summary = <String, int>{};
-    
+
     for (final item in items) {
       final workstation = item.resolvedWorkstation;
       summary[workstation] = (summary[workstation] ?? 0) + item.qty;
     }
-    
+
     return summary;
   }
 
@@ -513,7 +593,7 @@ class Order {
     }
   }
 
-  // ✅ Copy with method untuk immutability
+  // ✅ Updated copyWith method dengan serving option
   Order copyWith({
     String? orderId,
     String? name,
@@ -534,6 +614,8 @@ class Order {
     String? outletId,
     String? cashierId,
     String? userId,
+    String? servingOption,
+    DateTime? foodServingTime,
   }) {
     return Order(
       orderId: orderId ?? this.orderId,
@@ -555,6 +637,8 @@ class Order {
       outletId: outletId ?? this.outletId,
       cashierId: cashierId ?? this.cashierId,
       userId: userId ?? this.userId,
+      servingOption: servingOption ?? this.servingOption,
+      foodServingTime: foodServingTime ?? this.foodServingTime,
     );
   }
 }

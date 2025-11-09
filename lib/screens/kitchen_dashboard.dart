@@ -216,22 +216,23 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       Map<String, List<Order>> ordersMap, {
         bool isInitialLoad = false,
       }) async {
-    final newQueue = ordersMap['pending'] ?? [];
+    // final newQueue = ordersMap['pending'] ?? [];
+    final newWaiting = ordersMap['waiting'] ?? []; // ✅ Tambahkan waiting
     final newPreparing = ordersMap['preparing'] ?? [];
     final newDone = ordersMap['completed'] ?? [];
     final newReservations = ordersMap['reservations'] ?? [];
 
     // Auto-confirm pending orders
-    for (var order in newQueue) {
-      if (order.orderId != null && !_existingOrderIds.contains(order.orderId)) {
-        await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
-        if (kDebugMode) {
-          print('Auto-confirmed order ${order.orderId} to OnProcess');
-        }
-      }
-    }
+    // for (var order in newQueue) {
+    //   if (order.orderId != null && !_existingOrderIds.contains(order.orderId)) {
+    //     await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
+    //     if (kDebugMode) {
+    //       print('Auto-confirmed order ${order.orderId} to OnProcess');
+    //     }
+    //   }
+    // }
 
-    final allPreparing = [...newPreparing, ...newQueue];
+    final allPreparing = [...newPreparing, ...newWaiting];
 
     if (!isInitialLoad) {
       final currentReservationIds = reservations.map((o) => o.orderId).toSet();
