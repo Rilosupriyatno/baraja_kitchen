@@ -355,7 +355,7 @@ class OrderService {
 
             if (updated) {
               // Update status lokal
-              order.status = 'OnProcess';
+              // order.status = 'OnProcess';
               preparing.add(order);
               if (kDebugMode) {
                 print('✅ Successfully moved ${order.orderId} to preparation');
