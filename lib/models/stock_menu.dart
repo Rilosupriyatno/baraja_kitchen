@@ -3,7 +3,7 @@ class StockMenu {
   final String name;
   final String category;
   final int calculatedStock;
-  final int manualStock;
+  int manualStock;
   final int effectiveStock;
 
   StockMenu({

@@ -348,39 +348,6 @@ class StockMenuService {
     }
   }
 
-  // Update stock method (tetap sama)
-  // static Future<bool> updateManualStock(
-  //   String menuItemId,
-  //   int manualStock, {
-  //   String? adjustmentNote,
-  //   String? adjustedBy,
-  // }) async {
-  //   try {
-  //     final body = {
-  //       'manualStock': manualStock,
-  //       if (adjustmentNote != null) 'adjustmentNote': adjustmentNote,
-  //       if (adjustedBy != null) 'adjustedBy': adjustedBy,
-  //     };
-  //
-  //     final response = await http.put(
-  //       Uri.parse('$baseUrl/api/product/menu/$menuItemId/adjust-stock'),
-  //       headers: {'Content-Type': 'application/json'},
-  //       body: json.encode(body),
-  //     );
-  //
-  //     if (response.statusCode == 200) {
-  //       final jsonData = json.decode(response.body);
-  //       final success = jsonData['success'] ?? false;
-  //       return success;
-  //     } else {
-  //       final jsonData = json.decode(response.body);
-  //       final errorMessage = jsonData['message'] ?? 'Unknown error';
-  //       throw Exception('Update failed: $errorMessage');
-  //     }
-  //   } catch (e) {
-  //     rethrow;
-  //   }
-  // }
   static Future<bool> updateManualStock(
     String menuItemId,
     int manualStock, {
@@ -388,9 +355,6 @@ class StockMenuService {
     String? adjustedBy,
   }) async {
     try {
-      print('🔍 FLUTTER DEBUG: Starting updateManualStock');
-      print('🔍 menuItemId: $menuItemId');
-      print('🔍 manualStock: $manualStock');
 
       final body = {
         'manualStock': manualStock,
@@ -398,17 +362,11 @@ class StockMenuService {
         if (adjustedBy != null) 'adjustedBy': adjustedBy,
       };
 
-      print('🔍 Request body: ${json.encode(body)}');
-      print('🔍 URL: $baseUrl/api/product/menu/$menuItemId/adjust-stock');
-
       final response = await http.put(
         Uri.parse('$baseUrl/api/product/menu/$menuItemId/adjust-stock'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode(body),
       );
-
-      print('🔍 Response status: ${response.statusCode}');
-      print('🔍 Response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final jsonData = json.decode(response.body);
