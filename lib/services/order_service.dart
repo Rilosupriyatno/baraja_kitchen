@@ -420,10 +420,9 @@ class OrderService {
           continue;
         }
 
-        // ✅ Cek apakah ini reservasi (HANYA untuk dine-in)
-        bool isReservation = (order.service.toLowerCase().contains('reservation') ||
-            order.orderType?.toLowerCase() == 'reservation') &&
-            (order.orderType?.toLowerCase() == 'dine-in' || order.orderType == null);
+
+        bool isReservation = order.service.toLowerCase().contains('reservation') ||
+            order.orderType?.toLowerCase() == 'reservation';
 
         if (isReservation) {
           if (status == 'onprocess') {
