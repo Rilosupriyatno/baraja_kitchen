@@ -15,7 +15,8 @@ class StockMenuService {
       // Fetch menu items untuk mendapatkan workstation info
       final menuItemsResponse = await http.get(
         Uri.parse('$baseUrl/api/menu/all-menu-items-backoffice'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'},
       );
 
       if (menuItemsResponse.statusCode != 200) {
@@ -34,7 +35,8 @@ class StockMenuService {
       // Fetch stock menu
       final stockResponse = await http.get(
         Uri.parse('$baseUrl/api/product/menu-stock/manual-stock'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'},
       );
 
       if (stockResponse.statusCode != 200) {
@@ -64,8 +66,9 @@ class StockMenuService {
     try {
       // Fetch menu items untuk mendapatkan kategori
       final menuItemsResponse = await http.get(
-        Uri.parse('$baseUrl/api/menu/menu-items'),
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse('$baseUrl/api/menu/all-menu-items-backoffice'),
+        headers: {'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'},
       );
 
       if (menuItemsResponse.statusCode != 200) {
@@ -116,8 +119,9 @@ class StockMenuService {
     try {
       // Fetch menu items
       final menuItemsResponse = await http.get(
-        Uri.parse('$baseUrl/api/menu/menu-items'),
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse('$baseUrl/api/menu/all-menu-items-backoffice'),
+        headers: {'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'},
       );
 
       if (menuItemsResponse.statusCode != 200) {
@@ -206,18 +210,57 @@ class StockMenuService {
   }
 
   // Update stock method (tetap sama)
+  // static Future<bool> updateManualStock(
+  //   String menuItemId,
+  //   int manualStock, {
+  //   String? adjustmentNote,
+  //   String? adjustedBy,
+  // }) async {
+  //   try {
+  //     final body = {
+  //       'manualStock': manualStock,
+  //       if (adjustmentNote != null) 'adjustmentNote': adjustmentNote,
+  //       if (adjustedBy != null) 'adjustedBy': adjustedBy,
+  //     };
+  //
+  //     final response = await http.put(
+  //       Uri.parse('$baseUrl/api/product/menu/$menuItemId/adjust-stock'),
+  //       headers: {'Content-Type': 'application/json'},
+  //       body: json.encode(body),
+  //     );
+  //
+  //     if (response.statusCode == 200) {
+  //       final jsonData = json.decode(response.body);
+  //       final success = jsonData['success'] ?? false;
+  //       return success;
+  //     } else {
+  //       final jsonData = json.decode(response.body);
+  //       final errorMessage = jsonData['message'] ?? 'Unknown error';
+  //       throw Exception('Update failed: $errorMessage');
+  //     }
+  //   } catch (e) {
+  //     rethrow;
+  //   }
+  // }
   static Future<bool> updateManualStock(
-    String menuItemId,
-    int manualStock, {
-    String? adjustmentNote,
-    String? adjustedBy,
-  }) async {
+      String menuItemId,
+      int manualStock, {
+        String? adjustmentNote,
+        String? adjustedBy,
+      }) async {
     try {
+      print('🔍 FLUTTER DEBUG: Starting updateManualStock');
+      print('🔍 menuItemId: $menuItemId');
+      print('🔍 manualStock: $manualStock');
+
       final body = {
         'manualStock': manualStock,
         if (adjustmentNote != null) 'adjustmentNote': adjustmentNote,
         if (adjustedBy != null) 'adjustedBy': adjustedBy,
       };
+
+      print('🔍 Request body: ${json.encode(body)}');
+      print('🔍 URL: $baseUrl/api/product/menu/$menuItemId/adjust-stock');
 
       final response = await http.put(
         Uri.parse('$baseUrl/api/product/menu/$menuItemId/adjust-stock'),
@@ -225,16 +268,23 @@ class StockMenuService {
         body: json.encode(body),
       );
 
+      print('🔍 Response status: ${response.statusCode}');
+      print('🔍 Response body: ${response.body}');
+
       if (response.statusCode == 200) {
         final jsonData = json.decode(response.body);
         final success = jsonData['success'] ?? false;
+        print('✅ Success: $success');
         return success;
       } else {
         final jsonData = json.decode(response.body);
         final errorMessage = jsonData['message'] ?? 'Unknown error';
-        throw Exception('Update failed: $errorMessage');
+        final errorDetail = jsonData['error'] ?? '';
+        print('❌ Error: $errorMessage - $errorDetail');
+        throw Exception('Update failed: $errorMessage - $errorDetail');
       }
     } catch (e) {
+      print('❌ Exception caught: $e');
       rethrow;
     }
   }

@@ -155,6 +155,8 @@ class Order {
   final String? orderType;
   DateTime? createdAt;
   DateTime? updatedAt;
+  DateTime? createdAtWIB;
+  DateTime? updatedAtWIB;
   final String? reservationDate;
   final String? reservationTime;
   final DateTime? reservationDateTime;
@@ -175,6 +177,8 @@ class Order {
     required this.items,
     this.createdAt,
     this.updatedAt,
+    this.createdAtWIB,
+    this.updatedAtWIB,
     this.orderType,
     this.reservationDate,
     this.reservationTime,
@@ -224,6 +228,8 @@ class Order {
     // Parse dates
     DateTime? createdAt;
     DateTime? updatedAt;
+    DateTime? createdAtWIB;
+    DateTime? updatedAtWIB;
     
     try {
       if (json['createdAt'] != null) {
@@ -232,6 +238,15 @@ class Order {
       if (json['updatedAt'] != null) {
         updatedAt = DateTime.parse(json['updatedAt']);
       }
+
+      // ✅ Tambahkan parsing untuk WIB
+      if (json['createdAtWIB'] != null) {
+        createdAtWIB = DateTime.parse(json['createdAtWIB']);
+      }
+      if (json['updatedAtWIB'] != null) {
+        updatedAtWIB = DateTime.parse(json['updatedAtWIB']);
+      }
+
       // Fallback to WIB fields
       if (createdAt == null && json['createdAtWIB'] != null) {
         createdAt = DateTime.parse(json['createdAtWIB']);
@@ -312,6 +327,8 @@ class Order {
       items: itemsList,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      createdAtWIB: createdAtWIB,
+      updatedAtWIB: updatedAtWIB,
       orderType: json['orderType']?.toString(),
       reservationDate: reservationDate,
       reservationTime: reservationTime,
@@ -356,11 +373,27 @@ class Order {
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
+  // String remainingText() {
+  //   if (updatedAt == null) return '30:00';
+  //   final now = DateTime.now();
+  //   final diff = now.difference(updatedAt!);
+  //   final remaining = 30 * 60 - diff.inSeconds;
+  //
+  //   if (remaining <= 0) {
+  //     return '00:00';
+  //   }
+  //
+  //   final minutes = remaining ~/ 60;
+  //   final seconds = remaining % 60;
+  //
+  //   return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  // }
+
   String totalCookTime() {
     if (updatedAt == null) return '0 menit';
     final now = DateTime.now();
     final diff = now.difference(updatedAt!);
-    
+
     if (diff.inHours > 0) {
       return '${diff.inHours} jam ${diff.inMinutes.remainder(60)} menit';
     } else {
@@ -427,9 +460,10 @@ class Order {
   //   return null;
   // }
   String? get barType {
-    if (table.isEmpty) return null;
+    if (table.trim().isEmpty) return 'depan';
 
-    final firstChar = table[0].toUpperCase();
+    final cleanTable = table.trim();
+    final firstChar = cleanTable[0].toUpperCase();
 
     // Cek apakah angka
     if (RegExp(r'^[0-9]').hasMatch(table)) {
@@ -524,6 +558,8 @@ class Order {
     List<OrderItem>? items,
     DateTime? createdAt,
     DateTime? updatedAt,
+    DateTime? createdAtWIB,
+    DateTime? updatedAtWIB,
     String? orderType,
     String? reservationDate,
     String? reservationTime,
@@ -545,6 +581,8 @@ class Order {
       items: items ?? this.items,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      createdAtWIB: createdAt ?? this.createdAtWIB,
+      updatedAtWIB: updatedAt ?? this.updatedAtWIB,
       orderType: orderType ?? this.orderType,
       reservationDate: reservationDate ?? this.reservationDate,
       reservationTime: reservationTime ?? this.reservationTime,

@@ -283,6 +283,8 @@ class OrderService {
         items: beverageItems,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
+        createdAtWIB: order.createdAtWIB,
+        updatedAtWIB: order.updatedAtWIB,
         service: order.service,
         orderType: order.orderType,
         reservationDateTime: order.reservationDateTime,
@@ -486,6 +488,7 @@ class OrderService {
         Uri.parse('$baseUrl/api/orders/$orderId/complete'),
         headers: {
           'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
         },
         body: json.encode(body),
       );

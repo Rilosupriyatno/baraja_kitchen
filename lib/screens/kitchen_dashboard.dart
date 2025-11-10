@@ -1,4 +1,5 @@
 // screens/kitchen_dashboard.dart
+import 'package:baraja_bar/widgets/unified_stock_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
@@ -222,7 +223,22 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     final newReservations = ordersMap['reservations'] ?? [];
 
     // Auto-confirm pending orders
+    // for (var order in newQueue) {
+    //   if (order.orderId != null && !_existingOrderIds.contains(order.orderId)) {
+    //     await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
+    //     if (kDebugMode) {
+    //       print('Auto-confirmed order ${order.orderId} to OnProcess');
+    //     }
+    //   }
+    // }
+
+    // Auto-confirm pending orders (KECUALI RESERVASI)
     for (var order in newQueue) {
+      // Skip auto-confirm untuk reservasi
+      if (order.service.contains('Reservation')) {
+        continue; // Lewati order reservasi
+      }
+
       if (order.orderId != null && !_existingOrderIds.contains(order.orderId)) {
         await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
         if (kDebugMode) {
@@ -476,7 +492,8 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => CategorySelectionScreen(
+        // builder: (context) => CategorySelectionScreen(
+        builder: (context) => UnifiedStockScreen(
           workstation: workstation,
         ),
       ),
