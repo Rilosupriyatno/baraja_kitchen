@@ -155,6 +155,8 @@ class Order {
   final String? orderType;
   DateTime? createdAt;
   DateTime? updatedAt;
+  DateTime? createdAtWIB;
+  DateTime? updatedAtWIB;
   final String? reservationDate;
   final String? reservationTime;
   final DateTime? reservationDateTime;
@@ -179,6 +181,8 @@ class Order {
     required this.items,
     this.createdAt,
     this.updatedAt,
+    this.createdAtWIB,
+    this.updatedAtWIB,
     this.orderType,
     this.reservationDate,
     this.reservationTime,
@@ -213,11 +217,13 @@ class Order {
       try {
         final reservation = json['reservation'];
         if (reservation != null) {
-          if (reservation['table_id'] is List && (reservation['table_id'] as List).isNotEmpty) {
+          if (reservation['table_id'] is List &&
+              (reservation['table_id'] as List).isNotEmpty) {
             final firstTable = reservation['table_id'][0];
             tableNum = firstTable['table_number']?.toString() ?? 'TBD';
           } else if (reservation['table_id'] is Map) {
-            tableNum = reservation['table_id']['table_number']?.toString() ?? 'TBD';
+            tableNum =
+                reservation['table_id']['table_number']?.toString() ?? 'TBD';
           } else if (reservation['tableNumber'] != null) {
             tableNum = reservation['tableNumber'].toString();
           }
@@ -230,6 +236,8 @@ class Order {
     // Parse dates
     DateTime? createdAt;
     DateTime? updatedAt;
+    DateTime? createdAtWIB;
+    DateTime? updatedAtWIB;
 
     try {
       if (json['createdAt'] != null) {
@@ -238,6 +246,15 @@ class Order {
       if (json['updatedAt'] != null) {
         updatedAt = DateTime.parse(json['updatedAt']);
       }
+
+      // ✅ Tambahkan parsing untuk WIB
+      if (json['createdAtWIB'] != null) {
+        createdAtWIB = DateTime.parse(json['createdAtWIB']);
+      }
+      if (json['updatedAtWIB'] != null) {
+        updatedAtWIB = DateTime.parse(json['updatedAtWIB']);
+      }
+
       // Fallback to WIB fields
       if (createdAt == null && json['createdAtWIB'] != null) {
         createdAt = DateTime.parse(json['createdAtWIB']);
@@ -261,12 +278,15 @@ class Order {
 
     if (json['reservation'] != null) {
       final reservation = json['reservation'];
-      reservationData = reservation is Map ? Map<String, dynamic>.from(reservation) : null;
+      reservationData = reservation is Map
+          ? Map<String, dynamic>.from(reservation)
+          : null;
 
       // Handle reservation date and time
       if (reservation is Map) {
         // 🆕 Parse serving option
-        servingOption = reservation['food_serving_option']?.toString() ?? 'immediate';
+        servingOption =
+            reservation['food_serving_option']?.toString() ?? 'immediate';
 
         // 🆕 Parse food serving time
         if (reservation['food_serving_time'] != null) {
@@ -318,7 +338,7 @@ class Order {
       // Calculate from items as fallback
       totalPrice = itemsList.fold<double>(
         0.0,
-            (double sum, OrderItem item) => sum + (item.subtotal ?? 0.0),
+        (double sum, OrderItem item) => sum + (item.subtotal ?? 0.0),
       );
     }
 
@@ -332,6 +352,8 @@ class Order {
       items: itemsList,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      createdAtWIB: createdAtWIB,
+      updatedAtWIB: updatedAtWIB,
       orderType: json['orderType']?.toString(),
       reservationDate: reservationDate,
       reservationTime: reservationTime,
@@ -378,6 +400,22 @@ class Order {
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
+  // String remainingText() {
+  //   if (updatedAt == null) return '30:00';
+  //   final now = DateTime.now();
+  //   final diff = now.difference(updatedAt!);
+  //   final remaining = 30 * 60 - diff.inSeconds;
+  //
+  //   if (remaining <= 0) {
+  //     return '00:00';
+  //   }
+  //
+  //   final minutes = remaining ~/ 60;
+  //   final seconds = remaining % 60;
+  //
+  //   return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  // }
+
   String totalCookTime() {
     if (updatedAt == null) return '0 menit';
     final now = DateTime.now();
@@ -395,7 +433,9 @@ class Order {
     if (servingOption == 'scheduled' && foodServingTime != null) {
       // 🎯 SCHEDULED: Hitung berdasarkan food_serving_time - 30 menit
       final now = DateTime.now();
-      final prepStartTime = foodServingTime!.subtract(const Duration(minutes: 30));
+      final prepStartTime = foodServingTime!.subtract(
+        const Duration(minutes: 30),
+      );
       final diff = prepStartTime.difference(now);
 
       if (diff.isNegative) {
@@ -424,7 +464,9 @@ class Order {
       if (reservationDateTime == null) return '-';
 
       final now = DateTime.now();
-      final prepStartTime = reservationDateTime!.subtract(const Duration(minutes: 30));
+      final prepStartTime = reservationDateTime!.subtract(
+        const Duration(minutes: 30),
+      );
       final diff = prepStartTime.difference(now);
 
       if (diff.isNegative) {
@@ -507,9 +549,10 @@ class Order {
 
   // ✅ Helper untuk menentukan bar type berdasarkan table number
   String? get barType {
-    if (table.isEmpty) return null;
+    if (table.trim().isEmpty) return 'depan';
 
-    final firstChar = table[0].toUpperCase();
+    final cleanTable = table.trim();
+    final firstChar = cleanTable[0].toUpperCase();
 
     // Cek apakah angka
     if (RegExp(r'^[0-9]').hasMatch(table)) {
@@ -604,6 +647,8 @@ class Order {
     List<OrderItem>? items,
     DateTime? createdAt,
     DateTime? updatedAt,
+    DateTime? createdAtWIB,
+    DateTime? updatedAtWIB,
     String? orderType,
     String? reservationDate,
     String? reservationTime,
@@ -627,6 +672,8 @@ class Order {
       items: items ?? this.items,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      createdAtWIB: createdAt ?? this.createdAtWIB,
+      updatedAtWIB: updatedAt ?? this.updatedAtWIB,
       orderType: orderType ?? this.orderType,
       reservationDate: reservationDate ?? this.reservationDate,
       reservationTime: reservationTime ?? this.reservationTime,

@@ -50,6 +50,20 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
     return brandColor.withOpacity(0.1);
   }
 
+  String _formatTime(DateTime dateTime) {
+    // Format: "08 Nov, 14:30"
+    List<String> months = ['Januari', 'Febuari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+    String day = dateTime.day.toString().padLeft(2, '0');
+    String month = months[dateTime.month - 1];
+    String year = dateTime.year.toString();
+    String hour = dateTime.hour.toString().padLeft(2, '0');
+    String minute = dateTime.minute.toString().padLeft(2, '0');
+
+    return '$day $month $year, $hour:$minute';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -78,16 +92,12 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.only(left: 20, top: 20, right: 20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: widget.isExpanded
             ? const BorderRadius.vertical(top: Radius.circular(12))
-            : BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.grey.shade200,
-          width: 1,
-        ),
+            : BorderRadius.circular(12)
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -127,13 +137,44 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      widget.order.orderId ?? 'N/A',
-                      style: const TextStyle(
-                        color: Colors.black87,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          '${widget.order.orderId ?? 'N/A'} -',
+                          style: const TextStyle(
+                            color: Colors.black87,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _badgeColor,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: _cardColor.withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min, // Ini yang bikin pas sesuai konten
+                            children: [
+                              Icon(Icons.person_outline, size: 14, color: _cardColor),
+                              const SizedBox(width: 4),
+                              Text(
+                                widget.order.name,
+                                style: TextStyle(
+                                  color: _cardColor,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 6),
                     Container(
@@ -158,6 +199,38 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                   ],
                 ),
               ),
+
+              if (widget.order.table.isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: brandColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: brandColor.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.table_restaurant, size: 16, color: brandColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        widget.order.table,
+                        style: TextStyle(
+                          color: brandColor,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const SizedBox(width: 16),
+
               // Tombol Print di header (selalu visible)
               if (widget.onReprint != null)
                 Container(
@@ -178,6 +251,7 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                 ),
             ],
           ),
+
           const SizedBox(height: 16),
 
           if (widget.order.service.contains('Reservation') &&
@@ -250,52 +324,7 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
             ),
           ],
 
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Icon(Icons.person_outline, size: 16, color: Colors.grey.shade600),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  widget.order.name,
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              if (widget.order.table.isNotEmpty) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: brandColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: brandColor.withOpacity(0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.table_restaurant, size: 12, color: brandColor),
-                      const SizedBox(width: 4),
-                      Text(
-                        widget.order.table,
-                        style: TextStyle(
-                          color: brandColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
+          const SizedBox(height: 8),
 
           // if (widget.showTimer && !widget.isExpanded) ...[
     // if (widget.showTimer) ...[
@@ -331,8 +360,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
     //           ),
     //         ),
     //       ],
-
-          const SizedBox(height: 16),
 
           if (!widget.order.service.contains('Reservation')) ...[
             Row(
@@ -410,9 +437,40 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: Colors.yellow.shade300,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.timer,
+                        size: 12,
+                        color: Colors.yellow.shade700,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                          widget.order.updatedAtWIB != null
+                          ? _formatTime(widget.order.updatedAtWIB!)
+                              : '-',
+                        style: TextStyle(
+                          color: Colors.yellow.shade900,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 16),
           ],
 
           // SizedBox(
@@ -456,18 +514,13 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
-        border: Border(
-          left: BorderSide(color: Colors.grey.shade200, width: 1),
-          right: BorderSide(color: Colors.grey.shade200, width: 1),
-          bottom: BorderSide(color: Colors.grey.shade200, width: 1),
-        ),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12))
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Divider(color: Colors.grey.shade200, height: 1),
-          const SizedBox(height: 20),
+          const SizedBox(height: 8),
 
           Row(
             children: [
