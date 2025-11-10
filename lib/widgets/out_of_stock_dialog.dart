@@ -3,23 +3,30 @@ import 'package:flutter/material.dart';
 import '../models/out_of_stock_model.dart';
 import '../widgets/category_selection_screen.dart';
 
-class OutOfStockDialog extends StatelessWidget {
+class OutOfStockDialog extends StatefulWidget {
   final List<OutOfStockItem> outOfStockItems;
   final String workstation;
   final Color brandColor;
+  final VoidCallback? onRefresh; // 🔥 TAMBAHAN: Callback untuk refresh
 
   const OutOfStockDialog({
     super.key,
     required this.outOfStockItems,
     required this.workstation,
     required this.brandColor,
+    this.onRefresh,
   });
 
+  @override
+  State<OutOfStockDialog> createState() => _OutOfStockDialogState();
+}
+
+class _OutOfStockDialogState extends State<OutOfStockDialog> {
   // Group items by category
   Map<String, List<OutOfStockItem>> _groupByCategory() {
     final Map<String, List<OutOfStockItem>> grouped = {};
 
-    for (var item in outOfStockItems) {
+    for (var item in widget.outOfStockItems) {
       if (!grouped.containsKey(item.categoryId)) {
         grouped[item.categoryId] = [];
       }
@@ -32,8 +39,17 @@ class OutOfStockDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final groupedItems = _groupByCategory();
-    final outOfStockCount = outOfStockItems.where((i) => i.isOutOfStock).length;
-    final criticalCount = outOfStockItems.where((i) => i.isCriticalStock).length;
+    final outOfStockCount = widget.outOfStockItems.where((i) => i.isOutOfStock).length;
+    final criticalCount = widget.outOfStockItems.where((i) => i.isCriticalStock).length;
+
+    // 🔥 TAMBAHAN: Auto-close jika tidak ada lagi item
+    if (widget.outOfStockItems.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      });
+    }
 
     return Dialog(
       shape: RoundedRectangleBorder(
@@ -97,6 +113,12 @@ class OutOfStockDialog extends StatelessWidget {
                         ),
                       ],
                     ),
+                  ),
+                  // 🔥 TAMBAHAN: Tombol refresh manual
+                  IconButton(
+                    icon: Icon(Icons.refresh, color: Colors.red.shade700),
+                    onPressed: widget.onRefresh,
+                    tooltip: 'Refresh',
                   ),
                   IconButton(
                     onPressed: () => Navigator.pop(context),
@@ -217,7 +239,7 @@ class OutOfStockDialog extends StatelessWidget {
             context,
             MaterialPageRoute(
               builder: (context) => CategorySelectionScreen(
-                workstation: workstation,
+                workstation: widget.workstation,
                 preSelectedCategoryId: categoryId,
               ),
             ),
@@ -238,7 +260,7 @@ class OutOfStockDialog extends StatelessWidget {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: brandColor.withOpacity(0.1),
+                      color: widget.brandColor.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -246,7 +268,7 @@ class OutOfStockDialog extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: brandColor,
+                        color: widget.brandColor,
                       ),
                     ),
                   ),

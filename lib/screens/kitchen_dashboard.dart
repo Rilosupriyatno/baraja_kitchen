@@ -70,14 +70,12 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   void initState() {
     super.initState();
 
-    // ===== TAMBAHKAN BARIS INI =====
     _printService.setBarType(widget.barType);
 
-    // Debug (opsional, untuk testing)
     if (kDebugMode) {
-      print('═══════════════════════════════════════════');
-      print('🔍 Dashboard barType: ${widget.barType}');
-      print('═══════════════════════════════════════════');
+      print('╔════════════════════════════════════════╗');
+      print('📍 Dashboard barType: ${widget.barType}');
+      print('╚════════════════════════════════════════╝');
     }
 
     _loadOrders();
@@ -91,7 +89,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       _loadOutOfStockItems();
     });
 
-
     const outletId = "outlet-1";
 
     SocketService.connect(
@@ -104,6 +101,18 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
         if (widget.barType != null) {
           _handleBeverageOrder(beverageData);
         }
+      },
+      onStockUpdate: (stockData) {
+        if (kDebugMode) {
+          print('📦 Stock updated received in dashboard: ${stockData['menuItemId']}');
+          print('📦 Full stock data: $stockData');
+        }
+
+        // Refresh out of stock items setelah ada update
+        _refreshOutOfStockAfterUpdate(stockData['menuItemId'] ?? '');
+
+        // Juga refresh stock menu list
+        _loadStockMenu();
       },
     );
   }
@@ -125,12 +134,63 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   void _showOutOfStockDialog() {
     showDialog(
       context: context,
+      barrierDismissible: true, // Allow dismiss by tapping outside
       builder: (context) => OutOfStockDialog(
         outOfStockItems: _outOfStockItems,
         workstation: workstation,
         brandColor: brandColor,
+        onRefresh: () async {
+          // 🔥 Refresh data saat tombol refresh di dialog diklik
+          await _loadOutOfStockItems();
+
+          // Tutup dan buka ulang dialog untuk update UI
+          if (mounted && Navigator.canPop(context)) {
+            Navigator.pop(context);
+            // Buka lagi jika masih ada items
+            if (_outOfStockItems.isNotEmpty) {
+              _showOutOfStockDialog();
+            }
+          }
+        },
       ),
     );
+  }
+
+  Future<void> _refreshOutOfStockAfterUpdate(String menuItemId) async {
+    try {
+      // Reload semua out of stock items
+      final updatedItems = await StockMenuService.getOutOfStockItems(workstation);
+
+      if (mounted) {
+        setState(() {
+          _outOfStockItems = updatedItems;
+        });
+
+        // Jika tidak ada lagi item out of stock, tutup dialog jika sedang terbuka
+        if (updatedItems.isEmpty && Navigator.canPop(context)) {
+          Navigator.pop(context);
+
+          // Tampilkan snackbar sukses
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text('Semua stok berhasil diperbarui!'),
+                ],
+              ),
+              backgroundColor: Color(0xFF077A4B),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error refreshing out of stock after update: $e');
+      }
+    }
   }
 
   void _handleBeverageOrder(Map<String, dynamic> beverageData) {

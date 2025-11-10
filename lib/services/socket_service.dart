@@ -11,9 +11,10 @@ class SocketService {
   /// Connect ke backend socket.io dengan support multiple bars
   static void connect({
     required String outletId,
-    String? barType, // 'depan' atau 'belakang'
+    String? barType,
     Function(Order)? onNewOrder,
     Function(Map<String, dynamic>)? onBeverageOrder,
+    Function(Map<String, dynamic>)? onStockUpdate, // ✅ TAMBAH INI
   }) {
     final baseUrl = dotenv.env['BASE_URL'] ?? 'http://localhost:3000';
     _currentBarType = barType;
@@ -26,6 +27,22 @@ class SocketService {
           .enableAutoConnect()
           .build(),
     );
+    _socket!.on('stock_updated', (data) {
+      print('📦 Stock updated event received: $data');
+
+      if (onStockUpdate != null) {
+        onStockUpdate(Map<String, dynamic>.from(data));
+      }
+    });
+
+    // 🔹 Event: kalibrasi stok selesai
+    _socket!.on('stock_calibrated', (data) {
+      print('🔄 Stock calibrated event received: $data');
+
+      if (onStockUpdate != null) {
+        onStockUpdate(Map<String, dynamic>.from(data));
+      }
+    });
 
     _socket!.onConnect((_) {
       print('✅ Socket connected: ${_socket!.id}');
