@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../models/out_of_stock_model.dart';
 import '../models/stock_menu.dart';
 import '../models/category_model.dart';
 
@@ -106,6 +107,85 @@ class StockMenuService {
     } catch (e) {
       throw Exception('Error fetching categories: $e');
     }
+  }
+
+  static Future<List<OutOfStockItem>> getOutOfStockItems(String workstation) async {
+    try {
+      // Fetch menu items untuk workstation
+      final menuItemsResponse = await http.get(
+        Uri.parse('$baseUrl/api/menu/all-menu-items'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (menuItemsResponse.statusCode != 200) {
+        throw Exception('Failed to load menu items: ${menuItemsResponse.statusCode}');
+      }
+
+      final Map<String, dynamic> menuItemsData = json.decode(menuItemsResponse.body);
+      List<dynamic> allMenuItems = menuItemsData['data'] ?? [];
+
+      // Filter berdasarkan workstation
+      final filteredItems = allMenuItems
+          .where((item) => item['workstation']?.toString().toLowerCase() == workstation.toLowerCase())
+          .toList();
+
+      // Fetch stock data
+      final stockResponse = await http.get(
+        Uri.parse('$baseUrl/api/product/menu-stock/manual-stock'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (stockResponse.statusCode != 200) {
+        throw Exception('Failed to load stock: ${stockResponse.statusCode}');
+      }
+
+      final Map<String, dynamic> stockData = json.decode(stockResponse.body);
+      List<dynamic> stockList = stockData['data'] ?? [];
+
+      // Create map untuk lookup cepat
+      Map<String, dynamic> stockMap = {};
+      for (var stock in stockList) {
+        stockMap[stock['menuItemId'].toString()] = stock;
+      }
+
+      // Filter items yang BENAR-BENAR habis (stok = 0)
+      List<OutOfStockItem> outOfStockItems = [];
+
+      for (var item in filteredItems) {
+        final menuItemId = item['id'].toString();
+        final stockInfo = stockMap[menuItemId];
+
+        if (stockInfo != null) {
+          final currentStock = stockInfo['effectiveStock'] ?? 0;
+
+          // HANYA masukkan jika stok = 0 (habis total)
+          if (currentStock <= 0) {
+            outOfStockItems.add(OutOfStockItem(
+              menuItemId: menuItemId,
+              menuItemName: item['name'] ?? 'Unknown',
+              categoryId: item['category']?['id']?.toString() ?? 'uncategorized',
+              categoryName: item['category']?['name'] ?? 'Uncategorized',
+              currentStock: currentStock,
+              stockStatus: 'out_of_stock',
+              workstation: workstation,
+              lastUpdated: DateTime.now(),
+            ));
+          }
+        }
+      }
+
+      return outOfStockItems;
+    } catch (e) {
+      throw Exception('Error fetching out of stock items: $e');
+    }
+  }
+
+  /// Helper untuk determine stock status
+  static String _determineStockStatus(int stock) {
+    if (stock <= 0) return 'out_of_stock';
+    if (stock <= 5) return 'critical_stock';
+    if (stock <= 10) return 'low_stock';
+    return 'in_stock';
   }
 
   // Get menu items by kategori dan workstation

@@ -7,8 +7,13 @@ import 'menu_list_screen.dart';
 
 class CategorySelectionScreen extends StatefulWidget {
   final String workstation;
+  final String? preSelectedCategoryId; // TAMBAHAN: untuk auto-navigate dari notifikasi stok
 
-  const CategorySelectionScreen({super.key, required this.workstation});
+  const CategorySelectionScreen({
+    super.key,
+    required this.workstation,
+    this.preSelectedCategoryId,
+  });
 
   @override
   State<CategorySelectionScreen> createState() => _CategorySelectionScreenState();
@@ -51,6 +56,23 @@ class _CategorySelectionScreenState extends State<CategorySelectionScreen> {
         _filteredCategories = categories;
         _isLoading = false;
       });
+
+      // TAMBAHAN: Auto-navigate jika ada preSelectedCategoryId
+      if (widget.preSelectedCategoryId != null && mounted) {
+        final selectedCategory = categories.firstWhere(
+              (cat) => cat.id == widget.preSelectedCategoryId,
+          orElse: () => categories.isNotEmpty ? categories.first : Category(id: '', name: '', itemCount: 0),
+        );
+
+        if (selectedCategory.id.isNotEmpty) {
+          // Delay sedikit agar UI tidak langsung jump
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (mounted) {
+              _navigateToMenuList(selectedCategory.id, selectedCategory.name);
+            }
+          });
+        }
+      }
     } catch (e) {
       setState(() {
         _errorMessage = e.toString();
@@ -268,10 +290,17 @@ class _CategorySelectionScreenState extends State<CategorySelectionScreen> {
               separatorBuilder: (context, index) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final category = _filteredCategories[index];
+                // TAMBAHAN: Highlight kategori yang dipilih dari notifikasi
+                final isPreSelected = widget.preSelectedCategoryId == category.id;
+
                 return Card(
-                  elevation: 2,
+                  elevation: isPreSelected ? 4 : 2,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: isPreSelected ? Colors.red.shade300 : Colors.transparent,
+                      width: 2,
+                    ),
                   ),
                   child: InkWell(
                     onTap: () => _navigateToMenuList(
@@ -289,7 +318,12 @@ class _CategorySelectionScreenState extends State<CategorySelectionScreen> {
                             height: 56,
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
-                                colors: [
+                                colors: isPreSelected
+                                    ? [
+                                  Colors.red.shade400,
+                                  Colors.red.shade600,
+                                ]
+                                    : [
                                   Colors.blue.shade400,
                                   Colors.blue.shade600,
                                 ],
@@ -299,7 +333,7 @@ class _CategorySelectionScreenState extends State<CategorySelectionScreen> {
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.blue.withOpacity(0.3),
+                                  color: (isPreSelected ? Colors.red : Colors.blue).withOpacity(0.3),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -323,12 +357,53 @@ class _CategorySelectionScreenState extends State<CategorySelectionScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  category.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 16,
-                                  ),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        category.name,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 16,
+                                          color: isPreSelected ? Colors.red.shade900 : Colors.black87,
+                                        ),
+                                      ),
+                                    ),
+                                    // TAMBAHAN: Badge untuk kategori yang dipilih dari notifikasi
+                                    if (isPreSelected)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade100,
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(
+                                            color: Colors.red.shade300,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.warning_amber_rounded,
+                                              size: 12,
+                                              color: Colors.red.shade700,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Ada masalah stok',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.red.shade700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
                                 ),
                                 const SizedBox(height: 4),
                                 Row(
@@ -356,7 +431,7 @@ class _CategorySelectionScreenState extends State<CategorySelectionScreen> {
                           Icon(
                             Icons.arrow_forward_ios,
                             size: 18,
-                            color: Colors.grey.shade400,
+                            color: isPreSelected ? Colors.red.shade400 : Colors.grey.shade400,
                           ),
                         ],
                       ),

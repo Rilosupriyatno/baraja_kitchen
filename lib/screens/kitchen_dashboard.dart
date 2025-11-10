@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'dart:async';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import '../models/order.dart';
+import '../models/out_of_stock_model.dart';
 import '../models/stock_menu.dart';
 import '../models/category_model.dart';
 import '../services/order_service.dart';
@@ -13,6 +14,7 @@ import '../services/stockmenu_service.dart';
 import '../services/thermal_print_service.dart';
 import '../widgets/order_card_compact.dart';
 import 'package:flutter/foundation.dart' hide Category;
+import '../widgets/out_of_stock_dialog.dart';
 import '../widgets/table_stockmenu.dart';
 import 'batch_cooking_screen.dart';
 import '../widgets/category_selection_screen.dart';
@@ -49,6 +51,8 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   final ThermalPrintService _printService = ThermalPrintService();
   final Set<String> _existingOrderIds = <String>{};
   final Map<String, bool> _expandedOrders = {};
+  List<OutOfStockItem> _outOfStockItems = [];
+  Timer? _stockCheckTimer;
 
   // Tentukan workstation berdasarkan barType
   String get workstation {
@@ -80,6 +84,13 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     _loadStockMenu();
     _loadCategories();
     _initializeTimers();
+    _loadOutOfStockItems();
+
+    // Setup timer untuk check stock setiap 5 menit
+    _stockCheckTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      _loadOutOfStockItems();
+    });
+
 
     const outletId = "outlet-1";
 
@@ -94,6 +105,31 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
           _handleBeverageOrder(beverageData);
         }
       },
+    );
+  }
+  Future<void> _loadOutOfStockItems() async {
+    try {
+      final items = await StockMenuService.getOutOfStockItems(workstation);
+      if (mounted) {
+        setState(() {
+          _outOfStockItems = items;
+        });
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error loading out of stock items: $e');
+      }
+    }
+  }
+
+  void _showOutOfStockDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => OutOfStockDialog(
+        outOfStockItems: _outOfStockItems,
+        workstation: workstation,
+        brandColor: brandColor,
+      ),
     );
   }
 
@@ -174,6 +210,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     _refreshTimer.cancel();
     SocketService.disconnect();
     _notificationService.dispose();
+    _stockCheckTimer?.cancel();
     super.dispose();
   }
 
@@ -1138,6 +1175,59 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                 tooltip: 'Pengaturan Printer',
               ),
             ),
+            const SizedBox(width: 8),
+            if (_outOfStockItems.isNotEmpty)
+              Stack(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: IconButton(
+                      icon: Icon(
+                        Icons.inventory_2_outlined,
+                        color: Colors.red.shade700,
+                        size: 24,
+                      ),
+                      onPressed: _showOutOfStockDialog,
+                      tooltip: 'Stok Habis/Kritis',
+                    ),
+                  ),
+                  Positioned(
+                    right: 4,
+                    top: 4,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade600,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.red.withOpacity(0.3),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 20,
+                        minHeight: 20,
+                      ),
+                      child: Text(
+                        '${_outOfStockItems.length}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             const SizedBox(width: 8),
             Container(
               decoration: BoxDecoration(
