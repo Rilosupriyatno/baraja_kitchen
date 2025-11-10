@@ -1,4 +1,4 @@
-// services/order_service.dart (FIXED VERSION - Support Takeaway/Pickup/Delivery)
+// services/order_service.dart (FIXED VERSION - Local Time Parsing)
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -209,7 +209,27 @@ class OrderService {
     }
   }
 
-  // ✅ Helper: Check apakah reservasi sudah waktunya dipindah ke penyiapan
+  // ✅ Helper: Parse waktu dari database sebagai waktu lokal (strip timezone)
+  static DateTime? _parseAsLocalTime(String? timeStr) {
+    if (timeStr == null) return null;
+
+    try {
+      // Strip timezone indicator (+00:00, Z, dll) dan parse sebagai local time
+      String cleanTimeStr = timeStr
+          .replaceAll(RegExp(r'\+\d{2}:\d{2}$'), '') // Hapus +00:00
+          .replaceAll(RegExp(r'-\d{2}:\d{2}$'), '') // Hapus -07:00
+          .replaceAll('Z', '');                       // Hapus Z
+
+      return DateTime.parse(cleanTimeStr);
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error parsing time string "$timeStr": $e');
+      }
+      return null;
+    }
+  }
+
+  // ✅ Helper: Check apakah reservasi sudah waktunya dipindah ke penyiapan (FIXED - Local Time)
   static bool shouldMoveReservationToPreparation(Order order) {
     if (order.reservationData == null) return false;
 
@@ -226,36 +246,36 @@ class OrderService {
         if (kDebugMode) {
           print('⚠️ Scheduled reservation ${order.orderId} has no food_serving_time, fallback to immediate');
         }
-        // Fallback ke immediate jika tidak ada food_serving_time
         return _checkImmediatePreparation(order, now);
       }
 
-      try {
-        final servingTime = DateTime.parse(servingTimeStr);
-        final diffInMinutes = servingTime.difference(now).inMinutes;
-
+      final servingTime = _parseAsLocalTime(servingTimeStr);
+      if (servingTime == null) {
         if (kDebugMode) {
-          print('📅 [SCHEDULED] Checking reservation ${order.orderId}:');
-          print('   Current time: $now');
-          print('   Food serving time: $servingTime');
-          print('   Difference: $diffInMinutes minutes');
-        }
-
-        // Mulai persiapan 30 menit sebelum food_serving_time
-        return diffInMinutes <= 30 && diffInMinutes >= -60;
-      } catch (e) {
-        if (kDebugMode) {
-          print('❌ Error parsing food_serving_time: $e');
+          print('❌ Failed to parse food_serving_time for ${order.orderId}');
         }
         return false;
       }
+
+      final diffInMinutes = servingTime.difference(now).inMinutes;
+
+      if (kDebugMode) {
+        print('📅 [SCHEDULED] Checking reservation ${order.orderId}:');
+        print('   Current time: $now');
+        print('   Food serving time (local): $servingTime');
+        print('   Difference: $diffInMinutes minutes');
+        print('   Should move to preparation: ${diffInMinutes <= 30 && diffInMinutes >= -60}');
+      }
+
+      // Mulai persiapan 30 menit sebelum food_serving_time
+      return diffInMinutes <= 30 && diffInMinutes >= -60;
     } else {
-      // ✅ IMMEDIATE: Gunakan reservation_time sebagai patokan (default behavior)
+      // ✅ IMMEDIATE: Gunakan reservation_time sebagai patokan
       return _checkImmediatePreparation(order, now);
     }
   }
 
-  // 🆕 Helper untuk cek immediate preparation
+  // 🆕 Helper untuk cek immediate preparation (FIXED)
   static bool _checkImmediatePreparation(Order order, DateTime now) {
     if (order.reservationDateTime == null) return false;
 
@@ -267,13 +287,14 @@ class OrderService {
       print('   Current time: $now');
       print('   Reservation time: $reservationTime');
       print('   Difference: $diffInMinutes minutes');
+      print('   Should move to preparation: ${diffInMinutes <= 30 && diffInMinutes >= -60}');
     }
 
     // Mulai persiapan 30 menit sebelum reservation_time
     return diffInMinutes <= 30 && diffInMinutes >= -60;
   }
 
-  // 🆕 Helper: Get preparation start time untuk display
+  // 🆕 Helper: Get preparation start time untuk display (FIXED - Local Time)
   static DateTime? getPreparationStartTime(Order order) {
     if (order.reservationData == null) return null;
 
@@ -283,22 +304,21 @@ class OrderService {
     if (servingOption == 'scheduled') {
       final servingTimeStr = reservationData['food_serving_time'];
       if (servingTimeStr != null) {
-        try {
-          final servingTime = DateTime.parse(servingTimeStr);
+        final servingTime = _parseAsLocalTime(servingTimeStr);
+        if (servingTime != null) {
           // 30 menit sebelum serving time
           return servingTime.subtract(const Duration(minutes: 30));
-        } catch (e) {
-          // Fallback ke reservation time
-          return order.reservationDateTime?.subtract(const Duration(minutes: 30));
         }
       }
+      // Fallback ke reservation time
+      return order.reservationDateTime?.subtract(const Duration(minutes: 30));
     }
 
     // Default: 30 menit sebelum reservation time
     return order.reservationDateTime?.subtract(const Duration(minutes: 30));
   }
 
-  // 🆕 Helper: Get countdown text untuk reservasi
+  // 🆕 Helper: Get countdown text untuk reservasi (FIXED - Local Time)
   static String getReservationCountdownText(Order order) {
     final prepStartTime = getPreparationStartTime(order);
     if (prepStartTime == null) return '-';
@@ -311,8 +331,8 @@ class OrderService {
       if (order.reservationData?['food_serving_option'] == 'scheduled') {
         final servingTimeStr = order.reservationData?['food_serving_time'];
         if (servingTimeStr != null) {
-          try {
-            final servingTime = DateTime.parse(servingTimeStr);
+          final servingTime = _parseAsLocalTime(servingTimeStr);
+          if (servingTime != null) {
             final servingDiff = servingTime.difference(now);
 
             if (servingDiff.isNegative) {
@@ -322,8 +342,6 @@ class OrderService {
             final hours = servingDiff.inHours;
             final minutes = servingDiff.inMinutes.remainder(60);
             return 'Serving dalam ${hours > 0 ? '$hours jam ' : ''}$minutes menit';
-          } catch (e) {
-            return 'Waktunya mulai persiapan';
           }
         }
       }
@@ -420,7 +438,6 @@ class OrderService {
           continue;
         }
 
-
         bool isReservation = order.service.toLowerCase().contains('reservation') ||
             order.orderType?.toLowerCase() == 'reservation';
 
@@ -441,7 +458,6 @@ class OrderService {
             bool updated = await updateOrderStatus(order.orderId!, 'OnProcess');
 
             if (updated) {
-              // ✅ Jangan modifikasi order langsung, langsung add ke preparing
               preparing.add(order);
             } else {
               reservations.add(order);
@@ -464,14 +480,12 @@ class OrderService {
             bool updated = await updateOrderStatus(order.orderId!, 'OnProcess');
 
             if (updated) {
-              // ✅ Jangan modifikasi order.status, langsung masukkan ke preparing
               preparing.add(order);
 
               if (kDebugMode) {
                 print('✅ Order ${order.orderId} moved to preparing');
               }
             } else {
-              // Fallback jika gagal update
               if (kDebugMode) {
                 print('⚠️ Failed to auto-confirm ${order.orderId}, keeping in pending');
               }
@@ -559,7 +573,6 @@ class OrderService {
             bool updated = await updateOrderStatus(order.orderId!, 'OnProcess');
 
             if (updated) {
-              // order.status = 'OnProcess';
               preparing.add(order);
             } else {
               pending.add(order);
