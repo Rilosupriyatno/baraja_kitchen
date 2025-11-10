@@ -1,6 +1,7 @@
 // services/thermal_print_service.dart
 import 'dart:convert';
-
+import 'dart:typed_data';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:esc_pos_printer/esc_pos_printer.dart';
 import 'package:esc_pos_utils/esc_pos_utils.dart';
 import 'package:flutter/foundation.dart';
@@ -17,8 +18,13 @@ enum PrinterConnectionType { wifi, bluetooth }
 class ThermalPrintService {
   static final ThermalPrintService _instance = ThermalPrintService._internal();
   factory ThermalPrintService() => _instance;
-  ThermalPrintService._internal();
-  static String get baseUrl => dotenv.env['BASE_URL'] ?? 'http://localhost:3000';
+  ThermalPrintService._internal() {
+    _loadPrinterConfig();
+  }
+
+  // Key untuk penyimpanan
+  static const String _printerConfigKey = 'printer_config';
+  static const String _autoPrintEnabledKey = 'auto_print_enabled';
 
   // Konfigurasi printer WiFi
   String? _printerIp;
@@ -27,6 +33,9 @@ class ThermalPrintService {
   // Konfigurasi printer Bluetooth
   BluetoothDevice? _bluetoothDevice;
   PrinterConnectionType _connectionType = PrinterConnectionType.wifi;
+
+  // Auto print setting
+  bool _autoPrintEnabled = true;
 
   // Track order yang sudah pernah diprint
   final Set<String> _printedOrders = <String>{};
@@ -40,6 +49,121 @@ class ThermalPrintService {
 
   // Bar Type Context
   String? _barType;
+
+  // SharedPreferences instance
+  late SharedPreferences _prefs;
+
+  /// Initialize shared preferences
+  Future<void> _initPreferences() async {
+    _prefs = await SharedPreferences.getInstance();
+  }
+
+  /// Load saved printer configuration
+  Future<void> _loadPrinterConfig() async {
+    await _initPreferences();
+
+    final configJson = _prefs.getString(_printerConfigKey);
+    final savedAutoPrint = _prefs.getBool(_autoPrintEnabledKey);
+
+    if (savedAutoPrint != null) {
+      _autoPrintEnabled = savedAutoPrint;
+    }
+
+    if (configJson != null) {
+      try {
+        final config = json.decode(configJson);
+        final connectionType = config['connectionType'];
+
+        if (connectionType == 'wifi') {
+          _printerIp = config['printerIp'];
+          _printerPort = config['printerPort'] ?? 9100;
+          _connectionType = PrinterConnectionType.wifi;
+
+          if (kDebugMode) {
+            print('🖨️ Loaded WiFi printer config: $_printerIp:$_printerPort');
+          }
+        } else if (connectionType == 'bluetooth') {
+          final deviceJson = config['bluetoothDevice'];
+          if (deviceJson != null) {
+            _bluetoothDevice = BluetoothDevice(
+              address: deviceJson['address'],
+              name: deviceJson['name'],
+              type: BluetoothDeviceType.unknown,
+            );
+            _connectionType = PrinterConnectionType.bluetooth;
+
+            if (kDebugMode) {
+              print('🖨️ Loaded Bluetooth printer config: ${_bluetoothDevice?.name}');
+            }
+          }
+        }
+
+        // Coba koneksi otomatis saat load
+        if (isConfigured) {
+          _autoConnect();
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('❌ Error loading printer config: $e');
+        }
+      }
+    }
+  }
+
+  /// Save printer configuration
+  Future<void> _savePrinterConfig() async {
+    await _initPreferences();
+
+    final config = <String, dynamic>{
+      'connectionType': _connectionType == PrinterConnectionType.wifi ? 'wifi' : 'bluetooth',
+      'savedAt': DateTime.now().toIso8601String(),
+    };
+
+    if (_connectionType == PrinterConnectionType.wifi) {
+      config['printerIp'] = _printerIp;
+      config['printerPort'] = _printerPort;
+    } else {
+      if (_bluetoothDevice != null) {
+        config['bluetoothDevice'] = {
+          'address': _bluetoothDevice!.address,
+          'name': _bluetoothDevice!.name,
+        };
+      }
+    }
+
+    await _prefs.setString(_printerConfigKey, json.encode(config));
+
+    if (kDebugMode) {
+      print('💾 Printer configuration saved');
+    }
+  }
+
+  /// Save auto print setting
+  Future<void> _saveAutoPrintSetting() async {
+    await _initPreferences();
+    await _prefs.setBool(_autoPrintEnabledKey, _autoPrintEnabled);
+  }
+
+  /// Auto connect to saved printer
+  Future<void> _autoConnect() async {
+    if (!isConfigured) return;
+
+    if (kDebugMode) {
+      print('🔄 Attempting auto-connect to printer...');
+    }
+
+    final success = await testConnection();
+
+    if (success) {
+      if (kDebugMode) {
+        print('✅ Auto-connect successful');
+      }
+    } else {
+      if (kDebugMode) {
+        print('❌ Auto-connect failed');
+      }
+    }
+  }
 
   /// Set bar type untuk context printing
   void setBarType(String? barType) {
@@ -64,8 +188,11 @@ class ThermalPrintService {
     _printerPort = port;
     _connectionType = PrinterConnectionType.wifi;
     _resetErrorTracking();
+
+    _savePrinterConfig(); // Simpan konfigurasi
+
     if (kDebugMode) {
-      print('Printer WiFi dikonfigurasi: $ip:$port');
+      print('🖨️ Printer WiFi dikonfigurasi: $ip:$port');
     }
   }
 
@@ -74,8 +201,21 @@ class ThermalPrintService {
     _bluetoothDevice = device;
     _connectionType = PrinterConnectionType.bluetooth;
     _resetErrorTracking();
+
+    _savePrinterConfig(); // Simpan konfigurasi
+
     if (kDebugMode) {
-      print('Printer Bluetooth dikonfigurasi: ${device.name}');
+      print('🖨️ Printer Bluetooth dikonfigurasi: ${device.name}');
+    }
+  }
+
+  /// Set auto print enabled
+  void setAutoPrintEnabled(bool enabled) {
+    _autoPrintEnabled = enabled;
+    _saveAutoPrintSetting(); // Simpan setting
+
+    if (kDebugMode) {
+      print('🖨️ Auto print ${enabled ? 'enabled' : 'disabled'}');
     }
   }
 
@@ -218,6 +358,32 @@ class ThermalPrintService {
         deviceName.contains('bluetooth');
   }
 
+  /// Clear saved printer configuration
+  Future<void> clearConfiguration() async {
+    await _initPreferences();
+
+    // Clear shared preferences
+    await _prefs.remove(_printerConfigKey);
+    await _prefs.remove(_autoPrintEnabledKey);
+
+    // Reset local variables
+    _printerIp = null;
+    _bluetoothDevice = null;
+    _connectionType = PrinterConnectionType.wifi;
+    _autoPrintEnabled = true;
+    _printedOrders.clear();
+    _resetErrorTracking();
+
+    if (kDebugMode) {
+      print('🗑️ Printer configuration cleared');
+    }
+  }
+
+  // GETTERS untuk mengakses nilai yang disimpan
+  bool get autoPrintEnabled => _autoPrintEnabled;
+  String? get printerIp => _printerIp;
+  BluetoothDevice? get bluetoothDevice => _bluetoothDevice;
+
   Future<bool> autoPrintOrder(Order order) async {
     final workstation = _workstationName.toLowerCase().replaceAll(' ', '_');
     final printerConfig = {
@@ -251,7 +417,7 @@ class ThermalPrintService {
             workstation,
             'printer_not_configured',
             'Printer belum dikonfigurasi, tidak dapat melakukan auto print',
-            technicalReason: technicalReason // FIXED: menggunakan named parameter
+            technicalReason: technicalReason
         );
       }
       return false;
@@ -273,7 +439,7 @@ class ThermalPrintService {
             workstation,
             'too_many_failures',
             'Sistem pause sementara karena terlalu banyak kegagalan print',
-            technicalReason: technicalReason // FIXED: menggunakan named parameter
+            technicalReason: technicalReason
         );
       }
       return false;
@@ -340,11 +506,10 @@ class ThermalPrintService {
           problematic['issues'],
           problematic['details'],
           problematic['stock_info']
-        // technical_info dihandle di backend
       );
     }
 
-    // Log print attempt untuk setiap item - FIXED: tanpa problematicDetails
+    // Log print attempt untuk setiap item
     final List<String> logIds = [];
     for (final item in validItems) {
       final stockInfo = await _checkItemStock(item);
@@ -356,7 +521,6 @@ class ThermalPrintService {
           workstation,
           printerConfig,
           stockInfo
-        // FIXED: hanya 5 parameter sesuai dengan method definition
       );
       if (logId != null) {
         logIds.add(logId);
@@ -386,7 +550,7 @@ class ThermalPrintService {
         print('🖨️ AUTO PRINT: Order ${order.orderId} with $totalCount items (all OK)');
       }
 
-      // Print order seperti biasa (semua item) - FIXED: tanpa hasProblematicItems
+      // Print order seperti biasa (semua item)
       final success = await _printOrderWithRetry(order, logIds: logIds);
 
       if (success) {
@@ -395,14 +559,14 @@ class ThermalPrintService {
 
         final duration = DateTime.now().difference(startTime).inMilliseconds;
 
-        // Log success untuk setiap item dengan problematic context - FIXED
+        // Log success untuk setiap item dengan problematic context
         for (final logId in logIds) {
           final wasProblematic = problematicItems.any((p) =>
           p['item']['id'] == _findItemIdByLogId(logId, validItems));
           await PrintTrackingService().logPrintSuccess(
               logId,
               duration,
-              wasProblematic: wasProblematic // FIXED: menggunakan named parameter
+              wasProblematic: wasProblematic
           );
         }
 
@@ -429,13 +593,13 @@ class ThermalPrintService {
           'timestamp': DateTime.now().toIso8601String()
         };
 
-        // Log failure untuk setiap item dengan technical details - FIXED
+        // Log failure untuk setiap item dengan technical details
         for (final logId in logIds) {
           await PrintTrackingService().logPrintFailure(
               logId,
               'auto_print_failed',
               'Auto print gagal setelah $_maxRetries percobaan',
-              technicalDetails: technicalDetails // FIXED: menggunakan named parameter
+              technicalDetails: technicalDetails
           );
         }
 
@@ -458,13 +622,13 @@ class ThermalPrintService {
         'timestamp': DateTime.now().toIso8601String()
       };
 
-      // Log failure untuk setiap item dengan error details - FIXED
+      // Log failure untuk setiap item dengan error details
       for (final logId in logIds) {
         await PrintTrackingService().logPrintFailure(
             logId,
             'auto_print_error',
             'Error selama auto print: ${e.toString()}',
-            technicalDetails: errorDetails // FIXED: menggunakan named parameter
+            technicalDetails: errorDetails
         );
       }
 
@@ -482,18 +646,17 @@ class ThermalPrintService {
   }
 
   /// Helper method untuk convert OrderItem ke Map
-  /// Helper method untuk convert OrderItem ke Map - FIXED
   Map<String, dynamic> _convertOrderItemToMap(OrderItem item) {
     return {
       'id': item.itemId.toString(), // order item ID
-      'menuItemId': item.menuItemId, // FIXED: tambahkan menuItemId
+      'menuItemId': item.menuItemId,
       'name': item.name,
       'quantity': item.qty,
       'notes': item.notes,
       'addons': item.addons,
       'toppings': item.toppings,
-      'workstation': item.workstation, // FIXED: tambahkan workstation
-      'mainCategory': item.mainCategory, // FIXED: tambahkan mainCategory
+      'workstation': item.workstation,
+      'mainCategory': item.mainCategory,
     };
   }
 
@@ -522,10 +685,10 @@ class ThermalPrintService {
     return beverageKeywords.any((keyword) => itemName.contains(keyword));
   }
 
-// services/thermal_print_service.dart - Enhanced stock check
+  // Enhanced stock check
   Future<Map<String, dynamic>> _checkItemStock(OrderItem item) async {
     try {
-      // FIXED: Gunakan menuItemId untuk mencari stock, bukan itemId
+      // Gunakan menuItemId untuk mencari stock, bukan itemId
       final menuItemId = item.menuItemId;
       if (menuItemId == null) {
         print('❌ No menuItemId found for item: ${item.name}');
@@ -583,8 +746,8 @@ class ThermalPrintService {
       'is_fallback': true
     };
   }
-  /// Print with retry mechanism (enhanced dengan tracking per item)
-  /// Print with retry mechanism - FIXED: tanpa parameter tambahan
+
+  /// Print with retry mechanism
   Future<bool> _printOrderWithRetry(Order order, {int attempt = 1, List<String>? logIds}) async {
     try {
       if (kDebugMode) {
@@ -599,14 +762,13 @@ class ThermalPrintService {
       }
 
       if (!success && attempt < _maxRetries) {
-        // Log retry attempt untuk setiap item - FIXED
+        // Log retry attempt untuk setiap item
         if (logIds != null) {
           for (final logId in logIds) {
             await PrintTrackingService().logPrintFailure(
                 logId,
                 'retrying',
                 'Retry attempt $attempt dari $_maxRetries'
-              // FIXED: hanya 3 parameter
             );
           }
         }
@@ -625,14 +787,13 @@ class ThermalPrintService {
       }
 
       if (attempt < _maxRetries) {
-        // Log retry attempt due to exception untuk setiap item - FIXED
+        // Log retry attempt due to exception untuk setiap item
         if (logIds != null) {
           for (final logId in logIds) {
             await PrintTrackingService().logPrintFailure(
                 logId,
                 'retrying',
                 'Retry attempt $attempt karena exception: ${e.toString()}'
-              // FIXED: hanya 3 parameter
             );
           }
         }
@@ -650,8 +811,6 @@ class ThermalPrintService {
       return false;
     }
   }
-
-  // ========== METHOD-METHOD PRINTING YANG SUDAH ADA (TIDAK DIUBAH) ==========
 
   Future<bool> printOrder(Order order) async {
     if (!isConfigured) {
@@ -1038,17 +1197,16 @@ class ThermalPrintService {
       'info': printerInfo,
     };
 
-    // Log print attempt untuk setiap item - FIXED
+    // Log print attempt untuk setiap item
     final List<String> logIds = [];
     for (final item in order.items) {
       final stockInfo = await _checkItemStock(item);
       final logId = await PrintTrackingService().logPrintAttempt(
-          order.orderId!, // String
-          _convertOrderItemToMap(item), // Map<String, dynamic>
-          workstation, // String
-          printerConfig, // Map<String, dynamic>
-          stockInfo // Map<String, dynamic> - parameter ke-5
-        // FIXED: hanya 5 parameter
+          order.orderId!,
+          _convertOrderItemToMap(item),
+          workstation,
+          printerConfig,
+          stockInfo
       );
       if (logId != null) {
         logIds.add(logId);
@@ -1066,16 +1224,15 @@ class ThermalPrintService {
           await PrintTrackingService().logPrintSuccess(
               logId,
               duration,
-              wasProblematic: false // FIXED: menggunakan named parameter
+              wasProblematic: false
           );
         }
       } else {
         for (final logId in logIds) {
           await PrintTrackingService().logPrintFailure(
               logId,
-              'printer_not_configured', // ✅ Gunakan enum value yang valid
+              'printer_not_configured',
               'Manual print gagal - printer tidak terkonfigurasi'
-            // FIXED: hanya 3 parameter
           );
         }
       }
@@ -1087,7 +1244,6 @@ class ThermalPrintService {
             logId,
             'unknown_error',
             e.toString()
-          // FIXED: hanya 3 parameter
         );
       }
       rethrow;
@@ -1098,10 +1254,17 @@ class ThermalPrintService {
   Future<bool> testConnection() async {
     if (!isConfigured) return false;
 
-    if (_connectionType == PrinterConnectionType.wifi) {
-      return await _testWiFiConnection();
-    } else {
-      return await _testBluetoothConnection();
+    try {
+      if (_connectionType == PrinterConnectionType.wifi) {
+        return await _testWiFiConnection();
+      } else {
+        return await _testBluetoothConnection();
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Test connection error: $e');
+      }
+      return false;
     }
   }
 
@@ -1213,10 +1376,10 @@ class ThermalPrintService {
 
   /// Getters
   int get printedCount => _printedOrders.length;
-  String? get printerIp => _printerIp;
-  BluetoothDevice? get bluetoothDevice => _bluetoothDevice;
 
   bool isAlreadyPrinted(String? orderId) {
     return orderId != null && _printedOrders.contains(orderId);
   }
+
+  static String get baseUrl => dotenv.env['BASE_URL'] ?? 'http://localhost:3000';
 }

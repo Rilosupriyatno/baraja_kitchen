@@ -318,6 +318,7 @@ class _BarSelectionScreenState extends State<BarSelectionScreen> {
 
   Widget _buildDeviceSelection(bool isTablet, bool isLargeTablet) {
     // Calculate grid columns based on screen size and device count
+    // ignore: unused_local_variable
     int crossAxisCount = 2;
     if (isLargeTablet && _devices.length >= 3) {
       crossAxisCount = 3;

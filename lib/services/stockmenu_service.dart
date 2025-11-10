@@ -64,7 +64,7 @@ class StockMenuService {
     try {
       // Fetch menu items untuk mendapatkan kategori
       final menuItemsResponse = await http.get(
-        Uri.parse('$baseUrl/api/menu/menu-items'),
+        Uri.parse('$baseUrl/api/menu/all-menu-items'),
         headers: {'Content-Type': 'application/json'},
       );
 
@@ -116,7 +116,7 @@ class StockMenuService {
     try {
       // Fetch menu items
       final menuItemsResponse = await http.get(
-        Uri.parse('$baseUrl/api/menu/menu-items'),
+        Uri.parse('$baseUrl/api/menu/all-menu-items'),
         headers: {'Content-Type': 'application/json'},
       );
 

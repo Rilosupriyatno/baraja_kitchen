@@ -126,23 +126,23 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   }
 
   Future<void> _loadStockMenu() async {
-      setState(() => _isLoading = true);
-      try {
-        // Pass an empty category to fetch all menus for the workstation
-        final data = await StockMenuService.getMenusByCategoryAndWorkstation('', workstation);
-        setState(() {
-          stockmenu = data.menus;
-          _isLoading = false;
-        });
-      } catch (e) {
-        setState(() => _isLoading = false);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
-          );
-        }
+    setState(() => _isLoading = true);
+    try {
+      // Pass an empty category to fetch all menus for the workstation
+      final data = await StockMenuService.getMenusByCategoryAndWorkstation('', workstation);
+      setState(() {
+        stockmenu = data.menus;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
       }
     }
+  }
 
   void _initializeTimers() {
     _mainTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -1018,6 +1018,49 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
               ),
             ),
 
+            // Status koneksi printer
+            if (_printService.isConfigured)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: _printService.consecutiveFailures == 0
+                      ? Colors.green.shade50
+                      : Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: _printService.consecutiveFailures == 0
+                        ? Colors.green.shade300
+                        : Colors.orange.shade300,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _printService.connectionType == PrinterConnectionType.wifi
+                          ? Icons.wifi
+                          : Icons.bluetooth,
+                      size: 14,
+                      color: _printService.consecutiveFailures == 0
+                          ? Colors.green.shade700
+                          : Colors.orange.shade700,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _printService.consecutiveFailures == 0 ? 'Tersambung' : 'Periksa',
+                      style: TextStyle(
+                        color: _printService.consecutiveFailures == 0
+                            ? Colors.green.shade900
+                            : Colors.orange.shade900,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             if (_printService.isConfigured)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1172,40 +1215,40 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       body: _isLoading
           ? _buildLoadingWidget()
           : _errorMessage != null
-              ? _buildErrorWidget()
-              : Row(
-                  children: [
-                    _buildSidebar(),
-                    Expanded(
-                      child: Container(
-                        color: const Color(0xFFF9FAFB),
-                        child: IndexedStack(
-                          index: _selectedTabIndex,
-                          children: [
-                            _buildOrdersList(preparing, true, false),
-                            BatchCookingView(
-                              orders: preparing,
-                              onBatchComplete: _completeBatchOrders,
-                            ),
-                            _buildOrdersList(done, false, true),
-                            _buildOrdersList(reservations, false, false),
-                            TableStockmenu(
-                              stockMenu: stockmenu,
-                              onRefresh: _loadStockMenu,
-                              brandColor: brandColor,
-                            ),
-                            _buildCategoriesPlaceholder(),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+          ? _buildErrorWidget()
+          : Row(
+        children: [
+          _buildSidebar(),
+          Expanded(
+            child: Container(
+              color: const Color(0xFFF9FAFB),
+              child: IndexedStack(
+                index: _selectedTabIndex,
+                children: [
+                  _buildOrdersList(preparing, true, false),
+                  BatchCookingView(
+                    orders: preparing,
+                    onBatchComplete: _completeBatchOrders,
+                  ),
+                  _buildOrdersList(done, false, true),
+                  _buildOrdersList(reservations, false, false),
+                  TableStockmenu(
+                    stockMenu: stockmenu,
+                    onRefresh: _loadStockMenu,
+                    brandColor: brandColor,
+                  ),
+                  _buildCategoriesPlaceholder(),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-// Printer Settings Dialog (tetap sama seperti sebelumnya)
+// Printer Settings Dialog dengan penyimpanan konfigurasi
 class _PrinterSettingsDialog extends StatefulWidget {
   final ThermalPrintService printService;
   final bool autoPrintEnabled;
@@ -1235,22 +1278,28 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
   @override
   void initState() {
     super.initState();
-    _ipController.text = widget.printService.printerIp ?? '';
-    _autoPrintEnabled = widget.autoPrintEnabled;
 
-    if (widget.printService.connectionType == PrinterConnectionType.bluetooth) {
-      _selectedConnectionType = 1;
-      _selectedDevice = widget.printService.bluetoothDevice;
-      if (_selectedDevice != null) {
-        _bluetoothDevices = [_selectedDevice!];
-      }
-    }
+    // Load saved configuration
+    _loadSavedConfig();
   }
 
-  @override
-  void dispose() {
-    _ipController.dispose();
-    super.dispose();
+  void _loadSavedConfig() {
+    final printService = widget.printService;
+
+    // Set connection type
+    _selectedConnectionType = printService.connectionType == PrinterConnectionType.wifi ? 0 : 1;
+
+    // Set IP address if WiFi
+    _ipController.text = printService.printerIp ?? '';
+
+    // Set Bluetooth device if Bluetooth
+    _selectedDevice = printService.bluetoothDevice;
+    if (_selectedDevice != null) {
+      _bluetoothDevices = [_selectedDevice!];
+    }
+
+    // Set auto print setting
+    _autoPrintEnabled = widget.autoPrintEnabled;
   }
 
   Future<void> _scanBluetoothDevices() async {
@@ -1392,18 +1441,56 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
       widget.printService.configureBluetoothPrinter(_selectedDevice!);
     }
 
+    // Save auto print setting
+    widget.printService.setAutoPrintEnabled(_autoPrintEnabled);
+
     final success = await widget.printService.testConnection();
     if (mounted) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            success ? 'Printer berhasil dikonfigurasi!' : 'Gagal terhubung ke printer',
+            success ? 'Printer berhasil dikonfigurasi dan disimpan!' : 'Gagal terhubung ke printer',
           ),
           backgroundColor: success ? widget.brandColor : Colors.red,
         ),
       );
     }
+  }
+
+  void _showClearConfigDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hapus Konfigurasi Printer'),
+        content: const Text('Konfigurasi printer yang tersimpan akan dihapus. Anda perlu mengkonfigurasi ulang printer untuk menggunakan fitur auto print.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              // Clear configuration
+              widget.printService.clearConfiguration();
+              Navigator.pop(context); // Close clear config dialog
+              Navigator.pop(context); // Close settings dialog
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Konfigurasi printer berhasil dihapus'),
+                  backgroundColor: widget.brandColor,
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1417,6 +1504,46 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Status koneksi tersimpan
+              if (widget.printService.isConfigured)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green[700], size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Printer tersimpan',
+                              style: TextStyle(
+                                color: Colors.green[700],
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                            Text(
+                              widget.printService.printerInfo,
+                              style: TextStyle(
+                                color: Colors.green[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
               SegmentedButton<int>(
                 segments: const [
                   ButtonSegment(value: 0, label: Text('WiFi/LAN'), icon: Icon(Icons.wifi)),
@@ -1478,13 +1605,13 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                         onPressed: _isScanning ? null : _scanBluetoothDevices,
                         icon: _isScanning
                             ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                ),
-                              )
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
                             : const Icon(Icons.bluetooth_searching),
                         label: Text(_isScanning ? 'Mencari...' : 'Lihat Paired'),
                         style: ElevatedButton.styleFrom(
@@ -1621,10 +1748,23 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+        // Tombol Clear Configuration
+        TextButton(
+          onPressed: () {
+            _showClearConfigDialog();
+          },
+          child: const Text('Hapus Konfigurasi'),
+        ),
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal')
+        ),
         ElevatedButton(
           onPressed: _testAndSave,
-          style: ElevatedButton.styleFrom(backgroundColor: widget.brandColor, foregroundColor: Colors.white),
+          style: ElevatedButton.styleFrom(
+              backgroundColor: widget.brandColor,
+              foregroundColor: Colors.white
+          ),
           child: const Text('Test & Simpan'),
         ),
       ],
