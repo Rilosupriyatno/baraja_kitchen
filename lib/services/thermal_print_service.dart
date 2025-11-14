@@ -319,10 +319,10 @@ class ThermalPrintService {
     }
   }
 
-  // ============================================
-  // AUTO PRINT WITH ITEM TRACKING
-  // ============================================
-  Future<bool> autoPrintOrder(Order order) async {
+// ============================================
+// AUTO PRINT WITH ITEM TRACKING
+// ============================================
+  Future<bool> autoPrintOrder(Order order, {bool isOpenBill = false}) async {  // ✅ TAMBAH PARAMETER
     final workstation = _workstationName.toLowerCase().replaceAll(' ', '_');
     final printerConfig = {
       'type': _connectionType == PrinterConnectionType.wifi ? 'wifi' : 'bluetooth',
@@ -358,6 +358,9 @@ class ThermalPrintService {
 
     if (kDebugMode) {
       print('🖨️ PRINTING ${itemsToPrint.length} items for order ${order.orderId}:');
+      if (isOpenBill) {  // ✅ TAMBAH LOG
+        print('   📌 OPEN BILL - Pesanan Tambahan');
+      }
       for (final item in itemsToPrint) {
         print('   📝 ${item.name} x${item.qty} (${item.itemId})');
       }
@@ -379,7 +382,8 @@ class ThermalPrintService {
 
     final startTime = DateTime.now();
     try {
-      final success = await _printOrderItems(order, itemsToPrint, logIds: logIds);
+      // ✅ Pass isOpenBill flag ke method print
+      final success = await _printOrderItems(order, itemsToPrint, isOpenBill: isOpenBill, logIds: logIds);
 
       if (success) {
         // ✅ Mark items sebagai sudah diprint di internal tracking
@@ -422,7 +426,8 @@ class ThermalPrintService {
     }
   }
 
-  Future<bool> _printOrderItems(Order order, List<OrderItem> itemsToPrint, {int attempt = 1, List<String>? logIds}) async {
+// Update _printOrderItems untuk menerima isOpenBill:
+  Future<bool> _printOrderItems(Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false, int attempt = 1, List<String>? logIds}) async {
     try {
       if (kDebugMode) {
         print('🔄 Print attempt $attempt for ${itemsToPrint.length} items');
@@ -430,15 +435,15 @@ class ThermalPrintService {
 
       bool success;
       if (_connectionType == PrinterConnectionType.wifi) {
-        success = await _printViaWiFiItems(order, itemsToPrint);
+        success = await _printViaWiFiItems(order, itemsToPrint, isOpenBill: isOpenBill);
       } else {
-        success = await _printViaBluetoothItems(order, itemsToPrint);
+        success = await _printViaBluetoothItems(order, itemsToPrint, isOpenBill: isOpenBill);
       }
 
       if (!success && attempt < _maxRetries) {
         if (kDebugMode) print('⏳ Retry in ${_retryDelay.inSeconds}s...');
         await Future.delayed(_retryDelay);
-        return await _printOrderItems(order, itemsToPrint, attempt: attempt + 1, logIds: logIds);
+        return await _printOrderItems(order, itemsToPrint, isOpenBill: isOpenBill, attempt: attempt + 1, logIds: logIds);
       }
 
       return success;
@@ -447,7 +452,7 @@ class ThermalPrintService {
 
       if (attempt < _maxRetries) {
         await Future.delayed(_retryDelay);
-        return await _printOrderItems(order, itemsToPrint, attempt: attempt + 1, logIds: logIds);
+        return await _printOrderItems(order, itemsToPrint, isOpenBill: isOpenBill, attempt: attempt + 1, logIds: logIds);
       }
 
       if (kDebugMode) print('❌ All ${itemsToPrint.length} items print attempts failed');
@@ -455,10 +460,8 @@ class ThermalPrintService {
     }
   }
 
-  // ============================================
-  // PRINT VIA WIFI (SPECIFIC ITEMS)
-  // ============================================
-  Future<bool> _printViaWiFiItems(Order order, List<OrderItem> itemsToPrint) async {
+// Update _printViaWiFiItems:
+  Future<bool> _printViaWiFiItems(Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false}) async {
     if (_printerIp == null) return false;
     NetworkPrinter? printer;
 
@@ -477,7 +480,7 @@ class ThermalPrintService {
 
       if (kDebugMode) print('✅ Connected to WiFi printer');
 
-      await _generateReceiptForItems(printer, order, itemsToPrint);
+      await _generateReceiptForItems(printer, order, itemsToPrint, isOpenBill: isOpenBill);
       await Future.delayed(const Duration(milliseconds: 500));
       printer.disconnect();
 
@@ -492,10 +495,8 @@ class ThermalPrintService {
     }
   }
 
-  // ============================================
-  // PRINT VIA BLUETOOTH (SPECIFIC ITEMS)
-  // ============================================
-  Future<bool> _printViaBluetoothItems(Order order, List<OrderItem> itemsToPrint) async {
+// Update _printViaBluetoothItems:
+  Future<bool> _printViaBluetoothItems(Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false}) async {
     if (_bluetoothDevice == null) return false;
     BluetoothConnection? connection;
 
@@ -515,7 +516,7 @@ class ThermalPrintService {
 
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm80, profile);
-      final bytes = await _generateReceiptBytesForItems(generator, order, itemsToPrint);
+      final bytes = await _generateReceiptBytesForItems(generator, order, itemsToPrint, isOpenBill: isOpenBill);
 
       connection.output.add(Uint8List.fromList(bytes));
       await connection.output.allSent.timeout(const Duration(seconds: 15));
@@ -532,11 +533,10 @@ class ThermalPrintService {
       return false;
     }
   }
-
   // ============================================
   // GENERATE RECEIPT FOR SPECIFIC ITEMS
   // ============================================
-  Future<void> _generateReceiptForItems(NetworkPrinter printer, Order order, List<OrderItem> itemsToPrint) async {
+  Future<void> _generateReceiptForItems(NetworkPrinter printer, Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false}) async {
     if (kDebugMode) {
       print('🖨️ Generating receipt for ${itemsToPrint.length} items');
     }
@@ -594,8 +594,24 @@ class ThermalPrintService {
     printer.hr(ch: '-');
     printer.text(' ');
 
-    printer.text('PESANAN:', styles: const PosStyles(bold: true, underline: true));
-    printer.text(' ');
+    if (isOpenBill) {
+      printer.text('** PESANAN TAMBAHAN **',
+          styles: const PosStyles(
+            align: PosAlign.center,
+            bold: true,
+            height: PosTextSize.size1,
+            width: PosTextSize.size1,
+          ));
+    }
+
+    printer.hr(ch: '-');
+
+    if (isOpenBill) {
+      printer.text('ITEM TAMBAHAN:', styles: const PosStyles(bold: true, underline: true));
+    } else {
+      printer.text('PESANAN:', styles: const PosStyles(bold: true, underline: true));
+    }
+
 
     // ✅ PRINT ONLY SPECIFIC ITEMS
     for (var item in itemsToPrint) {
@@ -646,7 +662,7 @@ class ThermalPrintService {
     printer.cut();
   }
 
-  Future<List<int>> _generateReceiptBytesForItems(Generator generator, Order order, List<OrderItem> itemsToPrint) async {
+  Future<List<int>> _generateReceiptBytesForItems(Generator generator, Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false}) async {
     final List<int> bytes = [];
 
     bytes.addAll(generator.text('BARAJA AMPHI',
@@ -695,9 +711,24 @@ class ThermalPrintService {
 
     bytes.addAll(generator.hr());
     bytes.addAll(generator.emptyLines(1));
+    if (isOpenBill) {
+      bytes.addAll(generator.text('** PESANAN TAMBAHAN **',
+          styles: const PosStyles(
+            align: PosAlign.center,
+            bold: true,
+            height: PosTextSize.size1,
+            width: PosTextSize.size1,
+          )));
+    }
 
-    bytes.addAll(generator.text('PESANAN:',
-        styles: const PosStyles(bold: true, underline: true)));
+    bytes.addAll(generator.hr());
+    if (isOpenBill) {
+      bytes.addAll(generator.text('ITEM TAMBAHAN:',
+          styles: const PosStyles(bold: true, underline: true)));
+    } else {
+      bytes.addAll(generator.text('PESANAN:',
+          styles: const PosStyles(bold: true, underline: true)));
+    }
     bytes.addAll(generator.emptyLines(1));
 
     // ✅ PRINT ONLY SPECIFIC ITEMS
