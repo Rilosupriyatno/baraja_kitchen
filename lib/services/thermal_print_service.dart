@@ -142,7 +142,7 @@ class ThermalPrintService {
     _barType = barType;
     if (kDebugMode) {
       print('🖨️ [PRINT SERVICE] Bar Type set to: ${barType ?? "null (KITCHEN)"}');
-      print('🖨️ [PRINT SERVICE] Header: "$_workstationName"');
+      print('🖨️ [PRINT SERVICE] Header: "Kitchen"');
     }
   }
 
@@ -550,7 +550,7 @@ class ThermalPrintService {
         ));
     printer.text(' ');
 
-    printer.text('ORDER $_workstationName',
+    printer.text('ORDER Kitchen',
         styles: const PosStyles(
           align: PosAlign.center,
           bold: true,
@@ -602,9 +602,10 @@ class ThermalPrintService {
             height: PosTextSize.size1,
             width: PosTextSize.size1,
           ));
+      printer.hr(ch: '-');
     }
 
-    printer.hr(ch: '-');
+
 
     if (isOpenBill) {
       printer.text('ITEM TAMBAHAN:', styles: const PosStyles(bold: true, underline: true));
@@ -673,7 +674,7 @@ class ThermalPrintService {
           bold: true,
         )));
 
-    bytes.addAll(generator.text('ORDER $_workstationName',
+    bytes.addAll(generator.text('ORDER Kitchen',
         styles: const PosStyles(
           align: PosAlign.center,
           bold: true,
@@ -719,9 +720,10 @@ class ThermalPrintService {
             height: PosTextSize.size1,
             width: PosTextSize.size1,
           )));
+      bytes.addAll(generator.hr());
     }
 
-    bytes.addAll(generator.hr());
+
     if (isOpenBill) {
       bytes.addAll(generator.text('ITEM TAMBAHAN:',
           styles: const PosStyles(bold: true, underline: true)));
@@ -930,7 +932,7 @@ class ThermalPrintService {
         ));
     printer.text(' ');
 
-    printer.text('ORDER $_workstationName',
+    printer.text('ORDER Kitchen',
         styles: const PosStyles(
           align: PosAlign.center,
           bold: true,
@@ -1050,7 +1052,7 @@ class ThermalPrintService {
           bold: true,
         )));
 
-    bytes.addAll(generator.text('ORDER $_workstationName',
+    bytes.addAll(generator.text('ORDER Kitchen',
         styles: const PosStyles(
           align: PosAlign.center,
           bold: true,
@@ -1169,7 +1171,7 @@ class ThermalPrintService {
         printer.text('TEST PRINTER',
             styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
         printer.emptyLines(1);
-        printer.text('Workstation: $_workstationName',
+        printer.text('Workstation: Kitchen',
             styles: const PosStyles(align: PosAlign.center, bold: true));
         printer.emptyLines(1);
         printer.text('Koneksi WiFi berhasil!',
@@ -1210,7 +1212,7 @@ class ThermalPrintService {
       bytes.addAll(generator.text('TEST PRINTER',
           styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2)));
       bytes.addAll(generator.emptyLines(1));
-      bytes.addAll(generator.text('Workstation: $_workstationName',
+      bytes.addAll(generator.text('Workstation: Kitchen',
           styles: const PosStyles(align: PosAlign.center, bold: true)));
       bytes.addAll(generator.emptyLines(1));
       bytes.addAll(generator.text('Koneksi Bluetooth berhasil!',
