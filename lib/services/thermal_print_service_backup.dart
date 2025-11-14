@@ -1041,17 +1041,14 @@ class ThermalPrintService {
 
       if (item.addons != null && item.addons!.isNotEmpty) {
         for (var addon in item.addons!) {
-          printer.text(
-            '  + ${addon['name']} - ${addon['options']['label']}',
-            styles: const PosStyles(fontType: PosFontType.fontB),
-          );
+          printer.text('  + ${addon['name']}',
+              styles: const PosStyles(fontType: PosFontType.fontB));
         }
       }
 
-
       if (item.toppings != null && item.toppings!.isNotEmpty) {
         for (var topping in item.toppings!) {
-          printer.text('  + ${topping['name']} - ${topping['options']['label']}',
+          printer.text('  + ${topping['name']}',
               styles: const PosStyles(fontType: PosFontType.fontB));
         }
       }
@@ -1152,13 +1149,13 @@ class ThermalPrintService {
 
       if (item.addons != null && item.addons!.isNotEmpty) {
         for (var addon in item.addons!) {
-          bytes.addAll(generator.text('  + ${addon['name']} - ${addon['options'][0]['label']}'));
+          bytes.addAll(generator.text('  + ${addon['name']}'));
         }
       }
 
       if (item.toppings != null && item.toppings!.isNotEmpty) {
         for (var topping in item.toppings!) {
-          bytes.addAll(generator.text('  + ${topping['name']} - ${topping['options']['label']}'));
+          bytes.addAll(generator.text('  + ${topping['name']}'));
         }
       }
 

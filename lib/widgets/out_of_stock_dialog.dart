@@ -1,4 +1,5 @@
 // widgets/out_of_stock_dialog.dart
+import 'package:baraja_bar/widgets/unified_stock_screen.dart';
 import 'package:flutter/material.dart';
 import '../models/out_of_stock_model.dart';
 import '../widgets/category_selection_screen.dart';
@@ -237,10 +238,16 @@ class _OutOfStockDialogState extends State<OutOfStockDialog> {
           // Navigate to category selection screen
           Navigator.push(
             context,
+            // MaterialPageRoute(
+            //   builder: (context) => CategorySelectionScreen(
+            //     workstation: widget.workstation,
+            //     preSelectedCategoryId: categoryId,
+            //   ),
+            // ),
             MaterialPageRoute(
-              builder: (context) => CategorySelectionScreen(
+              builder: (context) => UnifiedStockScreen(
                 workstation: widget.workstation,
-                preSelectedCategoryId: categoryId,
+                preSelectedCategoryId: categoryId, // Pass category ID yang diklik
               ),
             ),
           );

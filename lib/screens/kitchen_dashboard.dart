@@ -1,4 +1,4 @@
-// screens/kitchen_dashboard.dart
+// screens/kitchen_dashboard.dart (FIXED - Auto-Confirm & Print Logic)
 import 'package:baraja_bar/widgets/unified_stock_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -74,9 +74,9 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     _printService.setBarType(widget.barType);
 
     if (kDebugMode) {
-      print('╔════════════════════════════════════════╗');
+      print('╔═══════════════════════════════════════╗');
       print('📍 Dashboard barType: ${widget.barType}');
-      print('╚════════════════════════════════════════╝');
+      print('╚═══════════════════════════════════════╝');
     }
 
     _loadOrders();
@@ -138,19 +138,16 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   void _showOutOfStockDialog() {
     showDialog(
       context: context,
-      barrierDismissible: true, // Allow dismiss by tapping outside
+      barrierDismissible: true,
       builder: (context) => OutOfStockDialog(
         outOfStockItems: _outOfStockItems,
         workstation: workstation,
         brandColor: brandColor,
         onRefresh: () async {
-          // 🔥 Refresh data saat tombol refresh di dialog diklik
           await _loadOutOfStockItems();
 
-          // Tutup dan buka ulang dialog untuk update UI
           if (mounted && Navigator.canPop(context)) {
             Navigator.pop(context);
-            // Buka lagi jika masih ada items
             if (_outOfStockItems.isNotEmpty) {
               _showOutOfStockDialog();
             }
@@ -162,7 +159,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
   Future<void> _refreshOutOfStockAfterUpdate(String menuItemId) async {
     try {
-      // Reload semua out of stock items
       final updatedItems = await StockMenuService.getOutOfStockItems(
         workstation,
       );
@@ -172,11 +168,9 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
           _outOfStockItems = updatedItems;
         });
 
-        // Jika tidak ada lagi item out of stock, tutup dialog jika sedang terbuka
         if (updatedItems.isEmpty && Navigator.canPop(context)) {
           Navigator.pop(context);
 
-          // Tampilkan snackbar sukses
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Row(
@@ -204,9 +198,9 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
     _notificationService
         .playNewOrderNotification(
-          beverageData['orderId'] ?? 'unknown',
-          soundPath: 'sounds/alert.mp3',
-        )
+      beverageData['orderId'] ?? 'unknown',
+      soundPath: 'sounds/alert.mp3',
+    )
         .catchError((e) => false);
 
     if (_autoPrintEnabled && _printService.isConfigured) {
@@ -232,7 +226,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   Future<void> _loadStockMenu() async {
     setState(() => _isLoading = true);
     try {
-      // Pass an empty category to fetch all menus for the workstation
       final data = await StockMenuService.getMenusByCategoryAndWorkstation(
         '',
         workstation,
@@ -293,7 +286,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
     try {
       final ordersMap =
-          (widget.barType == 'depan' || widget.barType == 'belakang')
+      (widget.barType == 'depan' || widget.barType == 'belakang')
           ? await OrderService.refreshBarOrders(widget.barType!)
           : await OrderService.refreshKitchenOrders();
       await _mergeOrdersWithAlertState(ordersMap, isInitialLoad: true);
@@ -311,7 +304,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   Future<void> _refreshOrders() async {
     try {
       final orderService =
-          (widget.barType == 'depan' || widget.barType == 'belakang')
+      (widget.barType == 'depan' || widget.barType == 'belakang')
           ? await OrderService.refreshBarOrders(widget.barType!)
           : await OrderService.refreshKitchenOrders();
       await _mergeOrdersWithAlertState(orderService);
@@ -322,28 +315,77 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     }
   }
 
+  // ✅ FIXED: Auto-confirm waiting orders di dashboard
   Future<void> _mergeOrdersWithAlertState(
-    Map<String, List<Order>> ordersMap, {
-    bool isInitialLoad = false,
-  }) async {
-    // final newQueue = ordersMap['pending'] ?? [];
-    final newWaiting = ordersMap['waiting'] ?? []; // ✅ Tambahkan waiting
+      Map<String, List<Order>> ordersMap, {
+        bool isInitialLoad = false,
+      }) async {
+    final newWaiting = ordersMap['waiting'] ?? []; // ✅ Orders dengan status waiting
     final newPreparing = ordersMap['preparing'] ?? [];
     final newDone = ordersMap['completed'] ?? [];
     final newReservations = ordersMap['reservations'] ?? [];
 
-    // Auto-confirm pending orders
-    // for (var order in newQueue) {
-    //   if (order.orderId != null && !_existingOrderIds.contains(order.orderId)) {
-    //     await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
-    //     if (kDebugMode) {
-    //       print('Auto-confirmed order ${order.orderId} to OnProcess');
-    //     }
-    //   }
-    // }
+    // ✅ AUTO-CONFIRM WAITING ORDERS (Kitchen/Bar)
+    final confirmedOrders = <Order>[];
+    for (var order in newWaiting) {
+      if (order.orderId != null) {
+        final isNewOrder = !_existingOrderIds.contains(order.orderId);
 
-    final allPreparing = [...newPreparing, ...newWaiting];
+        if (kDebugMode) {
+          print('🚀 Auto-confirming ${order.orderType ?? 'order'} ${order.orderId} from Waiting to OnProcess');
+        }
 
+        final updated = await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
+
+        if (updated) {
+          // Update status order lokal
+          order.status = 'OnProcess';
+          confirmedOrders.add(order);
+
+          if (kDebugMode) {
+            print('✅ Order ${order.orderId} confirmed and moved to preparing');
+          }
+
+          // Mark as new order untuk trigger print
+          if (isNewOrder) {
+            _existingOrderIds.add(order.orderId!);
+          }
+        } else {
+          if (kDebugMode) {
+            print('⚠️ Failed to auto-confirm ${order.orderId}');
+          }
+        }
+      }
+    }
+
+    // ✅ AUTO-CONFIRM RESERVATIONS yang sudah waktunya
+    for (var order in newReservations) {
+      if (order.orderId != null && OrderService.shouldMoveReservationToPreparation(order)) {
+        if (kDebugMode) {
+          print('📅 Auto-confirming reservation ${order.orderId} to OnProcess');
+        }
+
+        final updated = await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
+
+        if (updated) {
+          order.status = 'OnProcess';
+          confirmedOrders.add(order);
+
+          if (!_existingOrderIds.contains(order.orderId)) {
+            _existingOrderIds.add(order.orderId!);
+          }
+
+          if (kDebugMode) {
+            print('✅ Reservation ${order.orderId} confirmed and moved to preparing');
+          }
+        }
+      }
+    }
+
+    // Combine preparing orders
+    final allPreparing = [...newPreparing, ...confirmedOrders];
+
+    // ✅ PROCESS NEW ORDERS & AUTO-PRINT
     if (!isInitialLoad) {
       final currentReservationIds = reservations.map((o) => o.orderId).toSet();
 
@@ -353,47 +395,58 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
         final isNewOrder = !_existingOrderIds.contains(order.orderId);
         final movedFromReservation =
             currentReservationIds.contains(order.orderId) &&
-            order.service.contains('Reservation');
+                order.service.contains('Reservation');
+        final wasJustConfirmed = confirmedOrders.any((o) => o.orderId == order.orderId);
 
-        if (isNewOrder || movedFromReservation) {
+        // ✅ Trigger notification & print untuk order baru atau yang baru dikonfirmasi
+        if (isNewOrder || movedFromReservation || wasJustConfirmed) {
           _existingOrderIds.add(order.orderId!);
 
+          // Play notification
           _notificationService
               .playNewOrderNotification(
-                order.orderId!,
-                soundPath: 'sounds/alert.mp3',
-              )
-              .catchError((e) {
-                return false;
-              });
+            order.orderId!,
+            soundPath: 'sounds/alert.mp3',
+          )
+              .catchError((e) => false);
 
+          // ✅ AUTO-PRINT untuk order yang baru masuk atau baru dikonfirmasi
           if (_autoPrintEnabled && _printService.isConfigured) {
-            final alreadyPrinted = _printService.isAlreadyPrinted(
-              order.orderId,
-            );
+            final alreadyPrinted = _printService.isAlreadyPrinted(order.orderId);
 
             if (!alreadyPrinted) {
+              if (kDebugMode) {
+                print('🖨️ Attempting auto-print for order ${order.orderId}');
+              }
+
               _printService
                   .autoPrintOrder(order)
                   .then((printed) {
-                    if (printed && mounted) {
-                      _showPrintSuccessSnackbar(order.orderId!);
-                    }
-                  })
+                if (printed && mounted) {
+                  _showPrintSuccessSnackbar(order.orderId!);
+                } else if (!printed && kDebugMode) {
+                  print('⚠️ Auto-print failed for ${order.orderId}');
+                }
+              })
                   .catchError((e) {
-                    if (kDebugMode) {
-                      print('❌ Print error for ${order.orderId}: $e');
-                    }
-                  });
+                if (kDebugMode) {
+                  print('❌ Print error for ${order.orderId}: $e');
+                }
+              });
+            } else {
+              if (kDebugMode) {
+                print('ℹ️ Order ${order.orderId} already printed, skipping');
+              }
             }
           }
         }
       }
 
-      // Process new reservations
+      // ✅ Process new reservations (yang belum waktunya)
       for (var order in newReservations) {
         if (order.orderId != null &&
-            !_existingOrderIds.contains(order.orderId)) {
+            !_existingOrderIds.contains(order.orderId) &&
+            !OrderService.shouldMoveReservationToPreparation(order)) {
           if (kDebugMode) {
             print('📅 Reservasi baru: ${order.orderId}');
           }
@@ -402,15 +455,14 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
           _notificationService
               .playNewOrderNotification(
-                order.orderId!,
-                soundPath: 'sounds/ding.mp3',
-              )
-              .catchError((e) {
-                return false;
-              });
+            order.orderId!,
+            soundPath: 'sounds/ding.mp3',
+          )
+              .catchError((e) => false);
         }
       }
     } else {
+      // Initial load: track semua order IDs
       for (var order in [...allPreparing, ...newDone, ...newReservations]) {
         if (order.orderId != null) {
           _existingOrderIds.add(order.orderId!);
@@ -425,15 +477,15 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
     // Sort orders
     allPreparing.sort(
-      (a, b) =>
+          (a, b) =>
           (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
     );
     newDone.sort(
-      (a, b) =>
+          (a, b) =>
           (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
     );
     newReservations.sort(
-      (a, b) =>
+          (a, b) =>
           (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
     );
 
@@ -482,7 +534,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   void _completeBatchOrders(List<String> orderIds) async {
     for (var orderId in orderIds) {
       final order = preparing.firstWhere(
-        (o) => o.orderId == orderId,
+            (o) => o.orderId == orderId,
         orElse: () => preparing.first,
       );
 
@@ -583,7 +635,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        // builder: (context) => CategorySelectionScreen(
         builder: (context) => UnifiedStockScreen(workstation: workstation),
       ),
     );
@@ -688,7 +739,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     return orders.where((order) {
       final nameMatch = order.name.toLowerCase().contains(search);
       final itemsMatch = order.items.any(
-        (item) => item.name.toLowerCase().contains(search),
+            (item) => item.name.toLowerCase().contains(search),
       );
       return nameMatch || itemsMatch;
     }).toList();
@@ -805,7 +856,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
             _buildSidebarTab(1, 'Batch Cook', preparing.length),
             _buildSidebarTab(2, 'Selesai', done.length),
             _buildSidebarTab(3, 'Reservasi', reservations.length),
-            // _buildSidebarTab(4, 'Stok', stockmenu.length),
             _buildSidebarTab(5, 'Stok by Kategori', categories.length),
           ],
         ),
@@ -908,7 +958,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       grouped.entries.where((entry) {
         final totalQty = entry.value.fold(
           0,
-          (sum, item) => sum + item.quantity,
+              (sum, item) => sum + item.quantity,
         );
         return totalQty >= 2;
       }),
@@ -958,15 +1008,11 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       appBar: AppBar(
         elevation: 1,
         toolbarHeight: 70,
-        // backgroundColor: widget.barType != null
-        //     ? widget.barType == 'depan' ? Colors.blue[700] : Colors.orange[700]
-        //     : brandColor,
-        // Di bagian AppBar backgroundColor (line ~859)
         backgroundColor: widget.barType == 'depan'
             ? Colors.blue[700]
             : widget.barType == 'belakang'
             ? Colors.orange[700]
-            : brandColor, // Default untuk kitchen atau nilai lain
+            : brandColor,
         title: Row(
           children: [
             Container(
@@ -1005,16 +1051,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
-                  // Text(
-                  //   widget.barType != null
-                  //       ? 'Bar ${widget.barType == 'depan' ? 'Depan' : 'Belakang'}'
-                  //       : 'Dapur Utama',
-                  //   style: const TextStyle(
-                  //     color: Colors.white70,
-                  //     fontSize: 12,
-                  //     fontWeight: FontWeight.w500,
-                  //   ),
-                  // ),
                   Text(
                     widget.barType == 'depan'
                         ? 'Bar Depan'
@@ -1035,17 +1071,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               margin: const EdgeInsets.only(right: 12),
-              // decoration: BoxDecoration(
-              //   color: widget.barType != null
-              //       ? widget.barType == 'depan' ? Colors.blue[50] : Colors.orange[50]
-              //       : Colors.white,
-              //   borderRadius: BorderRadius.circular(20),
-              //   border: Border.all(
-              //     color: widget.barType != null
-              //         ? widget.barType == 'depan' ? Colors.blue[300]! : Colors.orange[300]!
-              //         : brandColor
-              //   ),
-              // ),
               decoration: BoxDecoration(
                 color: widget.barType == 'depan'
                     ? Colors.blue[50]
@@ -1064,13 +1089,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Icon(
-                  //   widget.barType != null ? Icons.local_bar : Icons.restaurant,
-                  //   size: 14,
-                  //   color: widget.barType != null
-                  //       ? widget.barType == 'depan' ? Colors.blue[700] : Colors.orange[700]
-                  //       : brandColor
-                  // ),
                   Icon(
                     widget.barType == 'depan'
                         ? Icons.local_bar
@@ -1085,18 +1103,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                         : brandColor,
                   ),
                   const SizedBox(width: 4),
-                  // Text(
-                  //   widget.barType != null
-                  //       ? widget.barType == 'depan' ? 'Depan' : 'Belakang'
-                  //       : 'Dapur',
-                  //   style: TextStyle(
-                  //     color: widget.barType != null
-                  //         ? widget.barType == 'depan' ? Colors.blue[900] : Colors.orange[900]
-                  //         : brandColor,
-                  //     fontSize: 11,
-                  //     fontWeight: FontWeight.w600,
-                  //   ),
-                  // ),
                   Text(
                     widget.barType == 'depan'
                         ? 'Depan'
@@ -1349,76 +1355,39 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
             ),
           ],
         ),
-        // bottom: PreferredSize(
-        //   preferredSize: const Size.fromHeight(70),
-        //   child: Container(
-        //     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        //     color: Colors.white,
-        //     child: TextField(
-        //       onChanged: (value) => setState(() => search = value.toLowerCase()),
-        //       style: const TextStyle(fontSize: 15),
-        //       decoration: InputDecoration(
-        //         hintText: widget.barType != null ? 'Cari pesanan minuman...' : 'Cari produk...',
-        //         hintStyle: TextStyle(color: Colors.grey.shade400),
-        //         prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
-        //         suffixIcon: search.isNotEmpty
-        //             ? IconButton(
-        //                 icon: Icon(Icons.clear, color: Colors.grey.shade600),
-        //                 onPressed: () => setState(() => search = ''),
-        //               )
-        //             : null,
-        //         filled: true,
-        //         fillColor: Colors.grey.shade50,
-        //         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        //         border: OutlineInputBorder(
-        //           borderRadius: BorderRadius.circular(8),
-        //           borderSide: BorderSide(color: Colors.grey.shade200),
-        //         ),
-        //         enabledBorder: OutlineInputBorder(
-        //           borderRadius: BorderRadius.circular(8),
-        //           borderSide: BorderSide(color: Colors.grey.shade200),
-        //         ),
-        //         focusedBorder: OutlineInputBorder(
-        //           borderRadius: BorderRadius.circular(8),
-        //           borderSide: const BorderSide(color: brandColor, width: 1.5),
-        //         ),
-        //       ),
-        //     ),
-        //   ),
-        // ),
       ),
       body: _isLoading
           ? _buildLoadingWidget()
           : _errorMessage != null
           ? _buildErrorWidget()
           : Row(
-              children: [
-                _buildSidebar(),
-                Expanded(
-                  child: Container(
-                    color: const Color(0xFFF9FAFB),
-                    child: IndexedStack(
-                      index: _selectedTabIndex,
-                      children: [
-                        _buildOrdersList(preparing, true, false),
-                        BatchCookingView(
-                          orders: preparing,
-                          onBatchComplete: _completeBatchOrders,
-                        ),
-                        _buildOrdersList(done, false, true),
-                        _buildOrdersList(reservations, false, false),
-                        TableStockmenu(
-                          stockMenu: stockmenu,
-                          onRefresh: _loadStockMenu,
-                          brandColor: brandColor,
-                        ),
-                        _buildCategoriesPlaceholder(),
-                      ],
-                    ),
+        children: [
+          _buildSidebar(),
+          Expanded(
+            child: Container(
+              color: const Color(0xFFF9FAFB),
+              child: IndexedStack(
+                index: _selectedTabIndex,
+                children: [
+                  _buildOrdersList(preparing, true, false),
+                  BatchCookingView(
+                    orders: preparing,
+                    onBatchComplete: _completeBatchOrders,
                   ),
-                ),
-              ],
+                  _buildOrdersList(done, false, true),
+                  _buildOrdersList(reservations, false, false),
+                  TableStockmenu(
+                    stockMenu: stockmenu,
+                    onRefresh: _loadStockMenu,
+                    brandColor: brandColor,
+                  ),
+                  _buildCategoriesPlaceholder(),
+                ],
+              ),
             ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1453,28 +1422,22 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
   @override
   void initState() {
     super.initState();
-
-    // Load saved configuration
     _loadSavedConfig();
   }
 
   void _loadSavedConfig() {
     final printService = widget.printService;
 
-    // Set connection type
     _selectedConnectionType =
-        printService.connectionType == PrinterConnectionType.wifi ? 0 : 1;
+    printService.connectionType == PrinterConnectionType.wifi ? 0 : 1;
 
-    // Set IP address if WiFi
     _ipController.text = printService.printerIp ?? '';
 
-    // Set Bluetooth device if Bluetooth
     _selectedDevice = printService.bluetoothDevice;
     if (_selectedDevice != null) {
       _bluetoothDevices = [_selectedDevice!];
     }
 
-    // Set auto print setting
     _autoPrintEnabled = widget.autoPrintEnabled;
   }
 
@@ -1501,7 +1464,7 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
       if (devices.isEmpty && _bluetoothDevices.isEmpty) {
         setState(() {
           _errorMessage =
-              'Tidak ada printer yang dipasangkan. Silakan pair printer di pengaturan Bluetooth perangkat terlebih dahulu.';
+          'Tidak ada printer yang dipasangkan. Silakan pair printer di pengaturan Bluetooth perangkat terlebih dahulu.';
         });
       }
     } catch (e) {
@@ -1576,7 +1539,7 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
               setState(() {
                 _selectedDevice = device;
                 final exists = _bluetoothDevices.any(
-                  (d) => d.address == device.address,
+                      (d) => d.address == device.address,
                 );
                 if (!exists) {
                   _bluetoothDevices.add(device);
@@ -1622,7 +1585,6 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
       widget.printService.configureBluetoothPrinter(_selectedDevice!);
     }
 
-    // Save auto print setting
     widget.printService.setAutoPrintEnabled(_autoPrintEnabled);
 
     final success = await widget.printService.testConnection();
@@ -1656,10 +1618,9 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
           ),
           ElevatedButton(
             onPressed: () {
-              // Clear configuration
               widget.printService.clearConfiguration();
-              Navigator.pop(context); // Close clear config dialog
-              Navigator.pop(context); // Close settings dialog
+              Navigator.pop(context);
+              Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: const Text('Konfigurasi printer berhasil dihapus'),
@@ -1689,7 +1650,6 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Status koneksi tersimpan
               if (widget.printService.isConfigured)
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -1809,15 +1769,15 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                         onPressed: _isScanning ? null : _scanBluetoothDevices,
                         icon: _isScanning
                             ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
-                                  ),
-                                ),
-                              )
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
                             : const Icon(Icons.bluetooth_searching),
                         label: Text(
                           _isScanning ? 'Mencari...' : 'Lihat Paired',
@@ -1887,9 +1847,9 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                           ),
                           trailing: isSelected
                               ? Icon(
-                                  Icons.check_circle,
-                                  color: widget.brandColor,
-                                )
+                            Icons.check_circle,
+                            color: widget.brandColor,
+                          )
                               : null,
                           selected: isSelected,
                           selectedTileColor: widget.brandColor.withOpacity(0.1),
@@ -2005,7 +1965,6 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
         ),
       ),
       actions: [
-        // Tombol Clear Configuration
         TextButton(
           onPressed: () {
             _showClearConfigDialog();

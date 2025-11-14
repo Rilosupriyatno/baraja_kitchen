@@ -138,6 +138,12 @@ class StockMenuService {
         );
       }).toList();
 
+      // ✅ Filter kategori yang tidak diinginkan
+      final excludedCategories = ['ruangan', 'sparkling', 'event'];
+      categories = categories.where((category) {
+        return !excludedCategories.contains(category.name.toLowerCase());
+      }).toList();
+
       return categories;
     } catch (e) {
       throw Exception('Error fetching categories: $e');
@@ -150,7 +156,7 @@ class StockMenuService {
     try {
       // Fetch menu items untuk workstation
       final menuItemsResponse = await http.get(
-        Uri.parse('$baseUrl/api/menu/all-menu-items'),
+        Uri.parse('$baseUrl/api/menu/all-menu-items-backoffice'),
         headers: {'Content-Type': 'application/json'},
       );
 

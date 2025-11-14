@@ -1,4 +1,4 @@
-// services/order_service.dart (FIXED VERSION - Local Time Parsing)
+// services/order_service.dart (FIXED VERSION - Remove Auto-Confirm from Service)
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -420,12 +420,13 @@ class OrderService {
     return filteredOrders;
   }
 
-  // 🔹 Refresh dan kategorikan order untuk KITCHEN
+  // 🔹 Refresh dan kategorikan order untuk KITCHEN (FIXED - NO AUTO-CONFIRM)
   static Future<Map<String, List<Order>>> refreshKitchenOrders() async {
     try {
       final allOrders = await getKitchenOrders();
 
       List<Order> pending = [];
+      List<Order> waiting = [];  // ✅ TAMBAHAN: Kategori waiting
       List<Order> preparing = [];
       List<Order> completed = [];
       List<Order> reservations = [];
@@ -452,16 +453,10 @@ class OrderService {
 
           if (shouldMoveReservationToPreparation(order)) {
             if (kDebugMode) {
-              print('🔄 Moving reservation ${order.orderId} to preparation');
+              print('📅 Reservation ${order.orderId} ready for preparation (will be auto-confirmed in dashboard)');
             }
-
-            bool updated = await updateOrderStatus(order.orderId!, 'OnProcess');
-
-            if (updated) {
-              preparing.add(order);
-            } else {
-              reservations.add(order);
-            }
+            // ✅ JANGAN auto-confirm di sini, biarkan dashboard yang handle
+            reservations.add(order);
             continue;
           } else {
             reservations.add(order);
@@ -469,27 +464,13 @@ class OrderService {
           }
         }
 
-        // ✅ Kategorikan berdasarkan status (termasuk Takeaway/Pickup/Delivery)
+        // ✅ Kategorikan berdasarkan status (TANPA AUTO-CONFIRM)
         switch (status) {
           case 'waiting':
-          // ✅ AUTO-CONFIRM untuk non-reservation orders (termasuk Takeaway/Pickup/Delivery)
+          // ✅ JANGAN AUTO-CONFIRM di sini, masukkan ke kategori waiting
+            waiting.add(order);
             if (kDebugMode) {
-              print('🚀 Auto-confirming ${order.orderType ?? 'order'} ${order.orderId} from Waiting to OnProcess');
-            }
-
-            bool updated = await updateOrderStatus(order.orderId!, 'OnProcess');
-
-            if (updated) {
-              preparing.add(order);
-
-              if (kDebugMode) {
-                print('✅ Order ${order.orderId} moved to preparing');
-              }
-            } else {
-              if (kDebugMode) {
-                print('⚠️ Failed to auto-confirm ${order.orderId}, keeping in pending');
-              }
-              pending.add(order);
+              print('📥 Order ${order.orderId} in WAITING status (will be auto-confirmed in dashboard)');
             }
             break;
 
@@ -514,11 +495,12 @@ class OrderService {
       }
 
       if (kDebugMode) {
-        print('✅ Kitchen orders: pending=${pending.length}, preparing=${preparing.length}, completed=${completed.length}, reservations=${reservations.length}');
+        print('✅ Kitchen orders: pending=${pending.length}, waiting=${waiting.length}, preparing=${preparing.length}, completed=${completed.length}, reservations=${reservations.length}');
       }
 
       return {
         'pending': pending,
+        'waiting': waiting,  // ✅ TAMBAHAN: Return waiting orders
         'preparing': preparing,
         'completed': completed,
         'reservations': reservations,
@@ -531,7 +513,7 @@ class OrderService {
     }
   }
 
-  // 🔹 Refresh dan kategorikan order untuk BAR (FIXED VERSION)
+  // 🔹 Refresh dan kategorikan order untuk BAR (FIXED - NO AUTO-CONFIRM)
   static Future<Map<String, List<Order>>> refreshBarOrders(String barType) async {
     try {
       List<Order> allOrders;
@@ -551,6 +533,7 @@ class OrderService {
       allOrders = _filterBeverageItems(allOrders);
 
       List<Order> pending = [];
+      List<Order> waiting = [];  // ✅ TAMBAHAN: Kategori waiting
       List<Order> preparing = [];
       List<Order> completed = [];
       List<Order> ready = [];
@@ -565,17 +548,10 @@ class OrderService {
 
         switch (status) {
           case 'waiting':
-          // ✅ AUTO-CONFIRM untuk bar orders (termasuk Takeaway/Pickup/Delivery)
+          // ✅ JANGAN AUTO-CONFIRM di sini
+            waiting.add(order);
             if (kDebugMode) {
-              print('🍹 Auto-confirming bar order ${order.orderId} (${order.orderType ?? 'dine-in'}) from Waiting to OnProcess');
-            }
-
-            bool updated = await updateOrderStatus(order.orderId!, 'OnProcess');
-
-            if (updated) {
-              preparing.add(order);
-            } else {
-              pending.add(order);
+              print('🥤 Bar order ${order.orderId} in WAITING status (will be auto-confirmed in dashboard)');
             }
             break;
 
@@ -605,11 +581,12 @@ class OrderService {
       }
 
       if (kDebugMode) {
-        print('✅ Bar $barType orders: pending=${pending.length}, preparing=${preparing.length}, ready=${ready.length}, completed=${completed.length}');
+        print('✅ Bar $barType orders: pending=${pending.length}, waiting=${waiting.length}, preparing=${preparing.length}, ready=${ready.length}, completed=${completed.length}');
       }
 
       return {
         'pending': pending,
+        'waiting': waiting,  // ✅ TAMBAHAN: Return waiting orders
         'preparing': preparing,
         'ready': ready,
         'completed': completed,

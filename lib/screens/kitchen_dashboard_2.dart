@@ -1,19 +1,24 @@
 // screens/kitchen_dashboard.dart
+import 'package:baraja_bar/widgets/unified_stock_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import '../models/order.dart';
+import '../models/out_of_stock_model.dart';
 import '../models/stock_menu.dart';
+import '../models/category_model.dart';
 import '../services/order_service.dart';
 import '../services/socket_service.dart';
 import '../services/notification_service.dart';
 import '../services/stockmenu_service.dart';
 import '../services/thermal_print_service.dart';
 import '../widgets/order_card_compact.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' hide Category;
+import '../widgets/out_of_stock_dialog.dart';
 import '../widgets/table_stockmenu.dart';
 import 'batch_cooking_screen.dart';
+import '../widgets/category_selection_screen.dart';
 
 class KitchenDashboard extends StatefulWidget {
   final String? barType; // 'depan', 'belakang', atau null untuk kitchen
@@ -32,6 +37,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   List<Order> done = [];
   List<Order> reservations = [];
   List<StockMenu> stockmenu = [];
+  List<Category> categories = [];
   String search = '';
   bool _isLoading = false;
   String? _errorMessage;
@@ -46,14 +52,16 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   final ThermalPrintService _printService = ThermalPrintService();
   final Set<String> _existingOrderIds = <String>{};
   final Map<String, bool> _expandedOrders = {};
+  List<OutOfStockItem> _outOfStockItems = [];
+  Timer? _stockCheckTimer;
 
   // Tentukan workstation berdasarkan barType
   String get workstation {
-    // ← Tambahkan ini
-    if (widget.barType == null) {
-      return 'kitchen'; // Jika barType null, berarti kitchen
+    // Hanya 'depan' dan 'belakang' yang bar, sisanya kitchen
+    if (widget.barType == 'depan' || widget.barType == 'belakang') {
+      return 'bar';
     } else {
-      return 'bar'; // Jika ada barType (depan/belakang), berarti bar
+      return 'kitchen';
     }
   }
 
@@ -62,54 +70,175 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   @override
   void initState() {
     super.initState();
+
+    _printService.setBarType(widget.barType);
+
+    if (kDebugMode) {
+      print('╔════════════════════════════════════════╗');
+      print('📍 Dashboard barType: ${widget.barType}');
+      print('╚════════════════════════════════════════╝');
+    }
+
     _loadOrders();
     _loadStockMenu();
+    _loadCategories();
     _initializeTimers();
+    _loadOutOfStockItems();
 
-    // Hardcoded outletId
+    // Setup timer untuk check stock setiap 5 menit
+    _stockCheckTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      _loadOutOfStockItems();
+    });
+
     const outletId = "outlet-1";
 
-    // Connect socket dengan bar type
     SocketService.connect(
       outletId: outletId,
-      barType: widget.barType, // 'depan', 'belakang', atau null
+      barType: widget.barType,
       onNewOrder: (_) {
         _refreshOrders();
       },
       onBeverageOrder: (beverageData) {
-        // Hanya handle beverage orders jika ini adalah bar
         if (widget.barType != null) {
           _handleBeverageOrder(beverageData);
         }
       },
+      onStockUpdate: (stockData) {
+        if (kDebugMode) {
+          print(
+            '📦 Stock updated received in dashboard: ${stockData['menuItemId']}',
+          );
+          print('📦 Full stock data: $stockData');
+        }
+
+        // Refresh out of stock items setelah ada update
+        _refreshOutOfStockAfterUpdate(stockData['menuItemId'] ?? '');
+
+        // Juga refresh stock menu list
+        _loadStockMenu();
+      },
     );
+  }
+
+  Future<void> _loadOutOfStockItems() async {
+    try {
+      final items = await StockMenuService.getOutOfStockItems(workstation);
+      if (mounted) {
+        setState(() {
+          _outOfStockItems = items;
+        });
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error loading out of stock items: $e');
+      }
+    }
+  }
+
+  void _showOutOfStockDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: true, // Allow dismiss by tapping outside
+      builder: (context) => OutOfStockDialog(
+        outOfStockItems: _outOfStockItems,
+        workstation: workstation,
+        brandColor: brandColor,
+        onRefresh: () async {
+          // 🔥 Refresh data saat tombol refresh di dialog diklik
+          await _loadOutOfStockItems();
+
+          // Tutup dan buka ulang dialog untuk update UI
+          if (mounted && Navigator.canPop(context)) {
+            Navigator.pop(context);
+            // Buka lagi jika masih ada items
+            if (_outOfStockItems.isNotEmpty) {
+              _showOutOfStockDialog();
+            }
+          }
+        },
+      ),
+    );
+  }
+
+  Future<void> _refreshOutOfStockAfterUpdate(String menuItemId) async {
+    try {
+      // Reload semua out of stock items
+      final updatedItems = await StockMenuService.getOutOfStockItems(
+        workstation,
+      );
+
+      if (mounted) {
+        setState(() {
+          _outOfStockItems = updatedItems;
+        });
+
+        // Jika tidak ada lagi item out of stock, tutup dialog jika sedang terbuka
+        if (updatedItems.isEmpty && Navigator.canPop(context)) {
+          Navigator.pop(context);
+
+          // Tampilkan snackbar sukses
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text('Semua stok berhasil diperbarui!'),
+                ],
+              ),
+              backgroundColor: Color(0xFF077A4B),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error refreshing out of stock after update: $e');
+      }
+    }
   }
 
   void _handleBeverageOrder(Map<String, dynamic> beverageData) {
     print('🥤 Beverage order received: ${beverageData['orderId']}');
 
-    // Play notification untuk beverage order
     _notificationService
         .playNewOrderNotification(
-          beverageData['orderId'] ?? 'unknown',
-          soundPath: 'sounds/alert.mp3',
-        )
+      beverageData['orderId'] ?? 'unknown',
+      soundPath: 'sounds/alert.mp3',
+    )
         .catchError((e) => false);
 
-    // Auto print jika enabled
     if (_autoPrintEnabled && _printService.isConfigured) {
       // TODO: Implement beverage order printing
+    }
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final data = await StockMenuService.getCategoriesByWorkstation(
+        workstation,
+      );
+      setState(() {
+        categories = data;
+      });
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error loading categories: $e');
+      }
     }
   }
 
   Future<void> _loadStockMenu() async {
     setState(() => _isLoading = true);
     try {
-      final data = await StockMenuService.getStockMenuByWorkstation(
+      // Pass an empty category to fetch all menus for the workstation
+      final data = await StockMenuService.getMenusByCategoryAndWorkstation(
+        '',
         workstation,
       );
       setState(() {
-        stockmenu = data;
+        stockmenu = data.menus;
         _isLoading = false;
       });
     } catch (e) {
@@ -152,6 +281,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     _refreshTimer.cancel();
     SocketService.disconnect();
     _notificationService.dispose();
+    _stockCheckTimer?.cancel();
     super.dispose();
   }
 
@@ -162,8 +292,8 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     });
 
     try {
-      // final ordersMap = await OrderService.refreshOrders();
-      final ordersMap = widget.barType != null
+      final ordersMap =
+      (widget.barType == 'depan' || widget.barType == 'belakang')
           ? await OrderService.refreshBarOrders(widget.barType!)
           : await OrderService.refreshKitchenOrders();
       await _mergeOrdersWithAlertState(ordersMap, isInitialLoad: true);
@@ -180,8 +310,8 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
   Future<void> _refreshOrders() async {
     try {
-      // final orderService = await OrderService.refreshOrders();
-      final orderService = widget.barType != null
+      final orderService =
+      (widget.barType == 'depan' || widget.barType == 'belakang')
           ? await OrderService.refreshBarOrders(widget.barType!)
           : await OrderService.refreshKitchenOrders();
       await _mergeOrdersWithAlertState(orderService);
@@ -193,25 +323,26 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   }
 
   Future<void> _mergeOrdersWithAlertState(
-    Map<String, List<Order>> ordersMap, {
-    bool isInitialLoad = false,
-  }) async {
-    final newQueue = ordersMap['pending'] ?? [];
+      Map<String, List<Order>> ordersMap, {
+        bool isInitialLoad = false,
+      }) async {
+    // final newQueue = ordersMap['pending'] ?? [];
+    final newWaiting = ordersMap['waiting'] ?? []; // ✅ Tambahkan waiting
     final newPreparing = ordersMap['preparing'] ?? [];
     final newDone = ordersMap['completed'] ?? [];
     final newReservations = ordersMap['reservations'] ?? [];
 
     // Auto-confirm pending orders
-    for (var order in newQueue) {
-      if (order.orderId != null && !_existingOrderIds.contains(order.orderId)) {
-        await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
-        if (kDebugMode) {
-          print('Auto-confirmed order ${order.orderId} to OnProcess');
-        }
-      }
-    }
+    // for (var order in newQueue) {
+    //   if (order.orderId != null && !_existingOrderIds.contains(order.orderId)) {
+    //     await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
+    //     if (kDebugMode) {
+    //       print('Auto-confirmed order ${order.orderId} to OnProcess');
+    //     }
+    //   }
+    // }
 
-    final allPreparing = [...newPreparing, ...newQueue];
+    final allPreparing = [...newPreparing, ...newWaiting];
 
     if (!isInitialLoad) {
       final currentReservationIds = reservations.map((o) => o.orderId).toSet();
@@ -219,46 +350,41 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       for (var order in allPreparing) {
         if (order.orderId == null) continue;
 
-        // Check apakah order sudah pernah diproses
         final isNewOrder = !_existingOrderIds.contains(order.orderId);
         final movedFromReservation =
             currentReservationIds.contains(order.orderId) &&
-            order.service.contains('Reservation');
+                order.service.contains('Reservation');
 
         if (isNewOrder || movedFromReservation) {
-          // CRITICAL: Tambahkan ke _existingOrderIds SEGERA (synchronous)
           _existingOrderIds.add(order.orderId!);
 
-          // Play notification (async, tapi tidak blocking untuk add to set)
           _notificationService
               .playNewOrderNotification(
-                order.orderId!,
-                soundPath: 'sounds/alert.mp3',
-              )
+            order.orderId!,
+            soundPath: 'sounds/alert.mp3',
+          )
               .catchError((e) {
-                return false;
-              });
+            return false;
+          });
 
-          // Auto print (non-blocking)
           if (_autoPrintEnabled && _printService.isConfigured) {
             final alreadyPrinted = _printService.isAlreadyPrinted(
               order.orderId,
             );
 
             if (!alreadyPrinted) {
-              // Fire and forget - jangan await untuk mencegah blocking
               _printService
                   .autoPrintOrder(order)
                   .then((printed) {
-                    if (printed && mounted) {
-                      _showPrintSuccessSnackbar(order.orderId!);
-                    }
-                  })
+                if (printed && mounted) {
+                  _showPrintSuccessSnackbar(order.orderId!);
+                }
+              })
                   .catchError((e) {
-                    if (kDebugMode) {
-                      print('❌ Print error for ${order.orderId}: $e');
-                    }
-                  });
+                if (kDebugMode) {
+                  print('❌ Print error for ${order.orderId}: $e');
+                }
+              });
             }
           }
         }
@@ -272,22 +398,19 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
             print('📅 Reservasi baru: ${order.orderId}');
           }
 
-          // Add immediately
           _existingOrderIds.add(order.orderId!);
 
-          // Play notification (non-blocking)
           _notificationService
               .playNewOrderNotification(
-                order.orderId!,
-                soundPath: 'sounds/ding.mp3',
-              )
+            order.orderId!,
+            soundPath: 'sounds/ding.mp3',
+          )
               .catchError((e) {
-                return false;
-              });
+            return false;
+          });
         }
       }
     } else {
-      // Initial load: add all orders to existing set
       for (var order in [...allPreparing, ...newDone, ...newReservations]) {
         if (order.orderId != null) {
           _existingOrderIds.add(order.orderId!);
@@ -302,15 +425,15 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
     // Sort orders
     allPreparing.sort(
-      (a, b) =>
+          (a, b) =>
           (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
     );
     newDone.sort(
-      (a, b) =>
+          (a, b) =>
           (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
     );
     newReservations.sort(
-      (a, b) =>
+          (a, b) =>
           (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
     );
 
@@ -359,7 +482,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   void _completeBatchOrders(List<String> orderIds) async {
     for (var orderId in orderIds) {
       final order = preparing.firstWhere(
-        (o) => o.orderId == orderId,
+            (o) => o.orderId == orderId,
         orElse: () => preparing.first,
       );
 
@@ -377,81 +500,74 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   void _showOrderCompleteDialog(Order order) {
     showDialog(
       context: context,
-      builder:
-          (_) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: brandColor, size: 28),
+            const SizedBox(width: 12),
+            const Text('Pesanan Selesai'),
+          ],
+        ),
+        content: Text(
+          '${order.name} (Meja ${order.table}) selesai dalam ${order.totalCookTime()}',
+          style: const TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            child: const Text(
+              'OK',
+              style: TextStyle(fontSize: 16, color: brandColor),
             ),
-            title: Row(
-              children: [
-                Icon(Icons.check_circle, color: brandColor, size: 28),
-                const SizedBox(width: 12),
-                const Text('Pesanan Selesai'),
-              ],
-            ),
-            content: Text(
-              '${order.name} (Meja ${order.table}) selesai dalam ${order.totalCookTime()}',
-              style: const TextStyle(fontSize: 16),
-            ),
-            actions: [
-              TextButton(
-                child: const Text(
-                  'OK',
-                  style: TextStyle(fontSize: 16, color: brandColor),
-                ),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
+            onPressed: () => Navigator.of(context).pop(),
           ),
+        ],
+      ),
     );
   }
 
   void _showBatchCompleteDialog(int count) {
     showDialog(
       context: context,
-      builder:
-          (_) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: brandColor, size: 28),
+            const SizedBox(width: 12),
+            const Text('Batch Selesai'),
+          ],
+        ),
+        content: Text(
+          '$count pesanan berhasil diselesaikan secara batch!',
+          style: const TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            child: const Text(
+              'OK',
+              style: TextStyle(fontSize: 16, color: brandColor),
             ),
-            title: Row(
-              children: [
-                Icon(Icons.check_circle, color: brandColor, size: 28),
-                const SizedBox(width: 12),
-                const Text('Batch Selesai'),
-              ],
-            ),
-            content: Text(
-              '$count pesanan berhasil diselesaikan secara batch!',
-              style: const TextStyle(fontSize: 16),
-            ),
-            actions: [
-              TextButton(
-                child: const Text(
-                  'OK',
-                  style: TextStyle(fontSize: 16, color: brandColor),
-                ),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
+            onPressed: () => Navigator.of(context).pop(),
           ),
+        ],
+      ),
     );
   }
 
   void _showPrinterSettings() {
     showDialog(
       context: context,
-      builder:
-          (context) => _PrinterSettingsDialog(
-            printService: _printService,
-            autoPrintEnabled: _autoPrintEnabled,
-            onAutoPrintChanged: (value) {
-              setState(() {
-                _autoPrintEnabled = value;
-              });
-            },
-            brandColor: brandColor,
-          ),
+      builder: (context) => _PrinterSettingsDialog(
+        printService: _printService,
+        autoPrintEnabled: _autoPrintEnabled,
+        onAutoPrintChanged: (value) {
+          setState(() {
+            _autoPrintEnabled = value;
+          });
+        },
+        brandColor: brandColor,
+      ),
     );
   }
 
@@ -461,6 +577,16 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
         order.updatedAt = order.updatedAt!.add(Duration(minutes: minutes));
       }
     });
+  }
+
+  void _navigateToCategories() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        // builder: (context) => CategorySelectionScreen(
+        builder: (context) => UnifiedStockScreen(workstation: workstation),
+      ),
+    );
   }
 
   Widget _buildErrorWidget() {
@@ -562,7 +688,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     return orders.where((order) {
       final nameMatch = order.name.toLowerCase().contains(search);
       final itemsMatch = order.items.any(
-        (item) => item.name.toLowerCase().contains(search),
+            (item) => item.name.toLowerCase().contains(search),
       );
       return nameMatch || itemsMatch;
     }).toList();
@@ -602,60 +728,57 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
           child: Wrap(
             spacing: 16,
             runSpacing: 16,
-            children:
-                filteredOrders.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final order = entry.value;
-                  final isExpanded = _expandedOrders[order.orderId] ?? false;
+            children: filteredOrders.asMap().entries.map((entry) {
+              final index = entry.key;
+              final order = entry.value;
+              final isExpanded = _expandedOrders[order.orderId] ?? false;
 
-                  return SizedBox(
-                    width: cardWidth,
-                    child: OrderCardCompact(
-                      order: order,
-                      isExpanded: isExpanded,
-                      showTimer: showTimer,
-                      isFinished: isFinished,
-                      queueNumber: showTimer && !isFinished ? index + 1 : null,
-                      onToggleExpand: () {
-                        setState(() {
-                          _expandedOrders[order.orderId ?? ''] = !isExpanded;
-                        });
-                      },
-                      onComplete:
-                          showTimer && !isFinished
-                              ? () => _completeOrder(order)
-                              : null,
-                      onAddTime: showTimer ? _addTimeToOrder : null,
-                      onReprint: () async {
-                        print('Attempting to reprint order ${order.orderId}');
-                        final success = await _printService.manualPrint(order);
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Row(
-                                children: [
-                                  Icon(
-                                    success ? Icons.check_circle : Icons.error,
-                                    color: Colors.white,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    success
-                                        ? 'Berhasil print ulang'
-                                        : 'Gagal print, cek koneksi printer',
-                                  ),
-                                ],
+              return SizedBox(
+                width: cardWidth,
+                child: OrderCardCompact(
+                  order: order,
+                  isExpanded: isExpanded,
+                  showTimer: showTimer,
+                  isFinished: isFinished,
+                  queueNumber: showTimer && !isFinished ? index + 1 : null,
+                  onToggleExpand: () {
+                    setState(() {
+                      _expandedOrders[order.orderId ?? ''] = !isExpanded;
+                    });
+                  },
+                  onComplete: showTimer && !isFinished
+                      ? () => _completeOrder(order)
+                      : null,
+                  onAddTime: showTimer ? _addTimeToOrder : null,
+                  onReprint: () async {
+                    print('Attempting to reprint order ${order.orderId}');
+                    final success = await _printService.manualPrint(order);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              Icon(
+                                success ? Icons.check_circle : Icons.error,
+                                color: Colors.white,
                               ),
-                              backgroundColor:
-                                  success ? brandColor : Colors.red,
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
-                        }
-                      },
-                    ),
-                  );
-                }).toList(),
+                              const SizedBox(width: 8),
+                              Text(
+                                success
+                                    ? 'Berhasil print ulang'
+                                    : 'Gagal print, cek koneksi printer',
+                              ),
+                            ],
+                          ),
+                          backgroundColor: success ? brandColor : Colors.red,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+                ),
+              );
+            }).toList(),
           ),
         );
       },
@@ -682,7 +805,8 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
             _buildSidebarTab(1, 'Batch Cook', preparing.length),
             _buildSidebarTab(2, 'Selesai', done.length),
             _buildSidebarTab(3, 'Reservasi', reservations.length),
-            _buildSidebarTab(4, 'Stok', stockmenu.length),
+            // _buildSidebarTab(4, 'Stok', stockmenu.length),
+            _buildSidebarTab(5, 'Stok by Kategori', categories.length),
           ],
         ),
       ),
@@ -699,7 +823,12 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     }
 
     return InkWell(
-      onTap: () => setState(() => _selectedTabIndex = index),
+      onTap: () {
+        setState(() => _selectedTabIndex = index);
+        if (index == 5) {
+          _navigateToCategories();
+        }
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
         decoration: BoxDecoration(
@@ -779,10 +908,47 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       grouped.entries.where((entry) {
         final totalQty = entry.value.fold(
           0,
-          (sum, item) => sum + item.quantity,
+              (sum, item) => sum + item.quantity,
         );
         return totalQty >= 2;
       }),
+    );
+  }
+
+  Widget _buildCategoriesPlaceholder() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.category_outlined, size: 64, color: Colors.grey[400]),
+          const SizedBox(height: 16),
+          Text(
+            'Kelola Stok Berdasarkan Kategori',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Pilih kategori untuk mengorganisir update stok',
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _navigateToCategories,
+            icon: const Icon(Icons.arrow_forward),
+            label: const Text('Buka Kategori'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: brandColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -792,9 +958,15 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       appBar: AppBar(
         elevation: 1,
         toolbarHeight: 70,
-        backgroundColor: widget.barType != null ? widget.barType == 'depan'
+        // backgroundColor: widget.barType != null
+        //     ? widget.barType == 'depan' ? Colors.blue[700] : Colors.orange[700]
+        //     : brandColor,
+        // Di bagian AppBar backgroundColor (line ~859)
+        backgroundColor: widget.barType == 'depan'
             ? Colors.blue[700]
-            : Colors.orange[700] : brandColor,
+            : widget.barType == 'belakang'
+            ? Colors.orange[700]
+            : brandColor, // Default untuk kitchen atau nilai lain
         title: Row(
           children: [
             Container(
@@ -819,79 +991,172 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '',
-                    style: TextStyle(
-                      color: brandColor,
+                  Text(
+                    widget.barType == 'depan'
+                        ? 'Bar Depan'
+                        : widget.barType == 'belakang'
+                        ? 'Bar Belakang'
+                        : 'Dapur Utama',
+                    style: const TextStyle(
+                      color: Colors.white,
                       fontWeight: FontWeight.w600,
                       fontSize: 20,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (widget.barType != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      '',
-                      style: TextStyle(
-                        color: brandColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
+                  const SizedBox(height: 2),
+                  // Text(
+                  //   widget.barType != null
+                  //       ? 'Bar ${widget.barType == 'depan' ? 'Depan' : 'Belakang'}'
+                  //       : 'Dapur Utama',
+                  //   style: const TextStyle(
+                  //     color: Colors.white70,
+                  //     fontSize: 12,
+                  //     fontWeight: FontWeight.w500,
+                  //   ),
+                  // ),
+                  Text(
+                    widget.barType == 'depan'
+                        ? 'Bar Depan'
+                        : widget.barType == 'belakang'
+                        ? 'Bar Belakang'
+                        : 'Dapur Utama',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
                     ),
-                  ] else ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      '',
-                      style: TextStyle(
-                        color: brandColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+                  ),
                 ],
               ),
             ),
 
             // Bar Type Indicator
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              margin: const EdgeInsets.only(right: 12),
+              // decoration: BoxDecoration(
+              //   color: widget.barType != null
+              //       ? widget.barType == 'depan' ? Colors.blue[50] : Colors.orange[50]
+              //       : Colors.white,
+              //   borderRadius: BorderRadius.circular(20),
+              //   border: Border.all(
+              //     color: widget.barType != null
+              //         ? widget.barType == 'depan' ? Colors.blue[300]! : Colors.orange[300]!
+              //         : brandColor
+              //   ),
+              // ),
+              decoration: BoxDecoration(
+                color: widget.barType == 'depan'
+                    ? Colors.blue[50]
+                    : widget.barType == 'belakang'
+                    ? Colors.orange[50]
+                    : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: widget.barType == 'depan'
+                      ? Colors.blue[300]!
+                      : widget.barType == 'belakang'
+                      ? Colors.orange[300]!
+                      : brandColor,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Icon(
+                  //   widget.barType != null ? Icons.local_bar : Icons.restaurant,
+                  //   size: 14,
+                  //   color: widget.barType != null
+                  //       ? widget.barType == 'depan' ? Colors.blue[700] : Colors.orange[700]
+                  //       : brandColor
+                  // ),
+                  Icon(
+                    widget.barType == 'depan'
+                        ? Icons.local_bar
+                        : widget.barType == 'belakang'
+                        ? Icons.local_bar
+                        : Icons.restaurant,
+                    size: 14,
+                    color: widget.barType == 'depan'
+                        ? Colors.blue[700]
+                        : widget.barType == 'belakang'
+                        ? Colors.orange[700]
+                        : brandColor,
+                  ),
+                  const SizedBox(width: 4),
+                  // Text(
+                  //   widget.barType != null
+                  //       ? widget.barType == 'depan' ? 'Depan' : 'Belakang'
+                  //       : 'Dapur',
+                  //   style: TextStyle(
+                  //     color: widget.barType != null
+                  //         ? widget.barType == 'depan' ? Colors.blue[900] : Colors.orange[900]
+                  //         : brandColor,
+                  //     fontSize: 11,
+                  //     fontWeight: FontWeight.w600,
+                  //   ),
+                  // ),
+                  Text(
+                    widget.barType == 'depan'
+                        ? 'Depan'
+                        : widget.barType == 'belakang'
+                        ? 'Belakang'
+                        : 'Dapur',
+                    style: TextStyle(
+                      color: widget.barType == 'depan'
+                          ? Colors.blue[900]
+                          : widget.barType == 'belakang'
+                          ? Colors.orange[900]
+                          : brandColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Status koneksi printer
+            if (_printService.isConfigured)
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
+                  horizontal: 10,
                   vertical: 6,
                 ),
-                margin: const EdgeInsets.only(right: 12),
+                margin: const EdgeInsets.only(right: 8),
                 decoration: BoxDecoration(
-                  color:
-                      widget.barType != null ? widget.barType == 'depan'
-                          ? Colors.blue[50]
-                          : Colors.orange[50] : Colors.white,
+                  color: _printService.consecutiveFailures == 0
+                      ? Colors.green.shade50
+                      : Colors.orange.shade50,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color:
-                        widget.barType != null ? widget.barType == 'depan'
-                            ? Colors.blue[300]!
-                            : Colors.orange[300]! : brandColor
+                    color: _printService.consecutiveFailures == 0
+                        ? Colors.green.shade300
+                        : Colors.orange.shade300,
                   ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      Icons.local_bar,
+                      _printService.connectionType == PrinterConnectionType.wifi
+                          ? Icons.wifi
+                          : Icons.bluetooth,
                       size: 14,
-                      color:
-                          widget.barType != null ? widget.barType == 'depan'
-                              ? Colors.blue[700]
-                              : Colors.orange[700] : brandColor
+                      color: _printService.consecutiveFailures == 0
+                          ? Colors.green.shade700
+                          : Colors.orange.shade700,
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      widget.barType != null ? widget.barType == 'depan' ? 'Depan' : 'Belakang' : 'Dapur',
+                      _printService.consecutiveFailures == 0
+                          ? 'Tersambung'
+                          : 'Periksa',
                       style: TextStyle(
-                        color:
-                        widget.barType != null ? widget.barType == 'depan'
-                            ? Colors.blue[900]
-                            : Colors.orange[900] : brandColor,
+                        color: _printService.consecutiveFailures == 0
+                            ? Colors.green.shade900
+                            : Colors.orange.shade900,
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                       ),
@@ -908,16 +1173,14 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                 ),
                 margin: const EdgeInsets.only(right: 8),
                 decoration: BoxDecoration(
-                  color:
-                      _autoPrintEnabled
-                          ? Colors.green.shade50
-                          : Colors.orange.shade50,
+                  color: _autoPrintEnabled
+                      ? Colors.green.shade50
+                      : Colors.orange.shade50,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color:
-                        _autoPrintEnabled
-                            ? Colors.green.shade300
-                            : Colors.orange.shade300,
+                    color: _autoPrintEnabled
+                        ? Colors.green.shade300
+                        : Colors.orange.shade300,
                   ),
                 ),
                 child: Row(
@@ -928,19 +1191,17 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                           ? Icons.wifi
                           : Icons.bluetooth,
                       size: 14,
-                      color:
-                          _autoPrintEnabled
-                              ? Colors.green.shade700
-                              : Colors.orange.shade700,
+                      color: _autoPrintEnabled
+                          ? Colors.green.shade700
+                          : Colors.orange.shade700,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       _autoPrintEnabled ? 'Auto' : 'Manual',
                       style: TextStyle(
-                        color:
-                            _autoPrintEnabled
-                                ? Colors.green.shade900
-                                : Colors.orange.shade900,
+                        color: _autoPrintEnabled
+                            ? Colors.green.shade900
+                            : Colors.orange.shade900,
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1000,6 +1261,59 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
               ),
             ),
             const SizedBox(width: 8),
+            if (_outOfStockItems.isNotEmpty)
+              Stack(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: IconButton(
+                      icon: Icon(
+                        Icons.inventory_2_outlined,
+                        color: Colors.red.shade700,
+                        size: 24,
+                      ),
+                      onPressed: _showOutOfStockDialog,
+                      tooltip: 'Stok Habis/Kritis',
+                    ),
+                  ),
+                  Positioned(
+                    right: 4,
+                    top: 4,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade600,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.red.withOpacity(0.3),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 20,
+                        minHeight: 20,
+                      ),
+                      child: Text(
+                        '${_outOfStockItems.length}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            const SizedBox(width: 8),
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -1041,29 +1355,21 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
         //     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         //     color: Colors.white,
         //     child: TextField(
-        //       onChanged:
-        //           (value) => setState(() => search = value.toLowerCase()),
+        //       onChanged: (value) => setState(() => search = value.toLowerCase()),
         //       style: const TextStyle(fontSize: 15),
         //       decoration: InputDecoration(
-        //         hintText:
-        //             widget.barType != null
-        //                 ? 'Cari pesanan minuman...'
-        //                 : 'Cari produk...',
+        //         hintText: widget.barType != null ? 'Cari pesanan minuman...' : 'Cari produk...',
         //         hintStyle: TextStyle(color: Colors.grey.shade400),
         //         prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
-        //         suffixIcon:
-        //             search.isNotEmpty
-        //                 ? IconButton(
-        //                   icon: Icon(Icons.clear, color: Colors.grey.shade600),
-        //                   onPressed: () => setState(() => search = ''),
-        //                 )
-        //                 : null,
+        //         suffixIcon: search.isNotEmpty
+        //             ? IconButton(
+        //                 icon: Icon(Icons.clear, color: Colors.grey.shade600),
+        //                 onPressed: () => setState(() => search = ''),
+        //               )
+        //             : null,
         //         filled: true,
         //         fillColor: Colors.grey.shade50,
-        //         contentPadding: const EdgeInsets.symmetric(
-        //           horizontal: 20,
-        //           vertical: 16,
-        //         ),
+        //         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         //         border: OutlineInputBorder(
         //           borderRadius: BorderRadius.circular(8),
         //           borderSide: BorderSide(color: Colors.grey.shade200),
@@ -1081,43 +1387,43 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
         //   ),
         // ),
       ),
-      body:
-          _isLoading
-              ? _buildLoadingWidget()
-              : _errorMessage != null
-              ? _buildErrorWidget()
-              : Row(
+      body: _isLoading
+          ? _buildLoadingWidget()
+          : _errorMessage != null
+          ? _buildErrorWidget()
+          : Row(
+        children: [
+          _buildSidebar(),
+          Expanded(
+            child: Container(
+              color: const Color(0xFFF9FAFB),
+              child: IndexedStack(
+                index: _selectedTabIndex,
                 children: [
-                  _buildSidebar(),
-                  Expanded(
-                    child: Container(
-                      color: const Color(0xFFF9FAFB),
-                      child: IndexedStack(
-                        index: _selectedTabIndex,
-                        children: [
-                          _buildOrdersList(preparing, true, false),
-                          BatchCookingView(
-                            orders: preparing,
-                            onBatchComplete: _completeBatchOrders,
-                          ),
-                          _buildOrdersList(done, false, true),
-                          _buildOrdersList(reservations, false, false),
-                          TableStockmenu(
-                            stockMenu: stockmenu,
-                            onRefresh: _loadStockMenu,
-                            brandColor: brandColor,
-                          ),
-                        ],
-                      ),
-                    ),
+                  _buildOrdersList(preparing, true, false),
+                  BatchCookingView(
+                    orders: preparing,
+                    onBatchComplete: _completeBatchOrders,
                   ),
+                  _buildOrdersList(done, false, true),
+                  _buildOrdersList(reservations, false, false),
+                  TableStockmenu(
+                    stockMenu: stockmenu,
+                    onRefresh: _loadStockMenu,
+                    brandColor: brandColor,
+                  ),
+                  _buildCategoriesPlaceholder(),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-// ==================== PRINTER SETTINGS DIALOG ====================
+// Printer Settings Dialog dengan penyimpanan konfigurasi
 class _PrinterSettingsDialog extends StatefulWidget {
   final ThermalPrintService printService;
   final bool autoPrintEnabled;
@@ -1138,33 +1444,38 @@ class _PrinterSettingsDialog extends StatefulWidget {
 class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
   int _selectedConnectionType = 0;
   final TextEditingController _ipController = TextEditingController();
-
   List<BluetoothDevice> _bluetoothDevices = [];
   BluetoothDevice? _selectedDevice;
   bool _isScanning = false;
   String? _errorMessage;
-
   late bool _autoPrintEnabled;
 
   @override
   void initState() {
     super.initState();
-    _ipController.text = widget.printService.printerIp ?? '';
-    _autoPrintEnabled = widget.autoPrintEnabled;
 
-    if (widget.printService.connectionType == PrinterConnectionType.bluetooth) {
-      _selectedConnectionType = 1;
-      _selectedDevice = widget.printService.bluetoothDevice;
-      if (_selectedDevice != null) {
-        _bluetoothDevices = [_selectedDevice!];
-      }
-    }
+    // Load saved configuration
+    _loadSavedConfig();
   }
 
-  @override
-  void dispose() {
-    _ipController.dispose();
-    super.dispose();
+  void _loadSavedConfig() {
+    final printService = widget.printService;
+
+    // Set connection type
+    _selectedConnectionType =
+    printService.connectionType == PrinterConnectionType.wifi ? 0 : 1;
+
+    // Set IP address if WiFi
+    _ipController.text = printService.printerIp ?? '';
+
+    // Set Bluetooth device if Bluetooth
+    _selectedDevice = printService.bluetoothDevice;
+    if (_selectedDevice != null) {
+      _bluetoothDevices = [_selectedDevice!];
+    }
+
+    // Set auto print setting
+    _autoPrintEnabled = widget.autoPrintEnabled;
   }
 
   Future<void> _scanBluetoothDevices() async {
@@ -1175,10 +1486,10 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
 
     try {
       final devices = await widget.printService.getPairedDevices();
-
       setState(() {
-        final Set<String> existingAddresses =
-            _bluetoothDevices.map((d) => d.address).toSet();
+        final Set<String> existingAddresses = _bluetoothDevices
+            .map((d) => d.address)
+            .toSet();
         for (var device in devices) {
           if (!existingAddresses.contains(device.address)) {
             _bluetoothDevices.add(device);
@@ -1190,7 +1501,7 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
       if (devices.isEmpty && _bluetoothDevices.isEmpty) {
         setState(() {
           _errorMessage =
-              'Tidak ada printer yang dipasangkan. Silakan pair printer di pengaturan Bluetooth perangkat terlebih dahulu.';
+          'Tidak ada printer yang dipasangkan. Silakan pair printer di pengaturan Bluetooth perangkat terlebih dahulu.';
         });
       }
     } catch (e) {
@@ -1207,82 +1518,81 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
 
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Input Manual MAC Address'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nama Printer (Opsional)',
-                    hintText: 'Thermal Printer',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: macController,
-                  decoration: const InputDecoration(
-                    labelText: 'MAC Address',
-                    hintText: '00:11:22:33:44:55',
-                    border: OutlineInputBorder(),
-                  ),
-                  textCapitalization: TextCapitalization.characters,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Format: XX:XX:XX:XX:XX:XX\nContoh: 00:11:22:33:44:55',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-              ],
+      builder: (context) => AlertDialog(
+        title: const Text('Input Manual MAC Address'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Nama Printer (Opsional)',
+                hintText: 'Thermal Printer',
+                border: OutlineInputBorder(),
+              ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Batal'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: macController,
+              decoration: const InputDecoration(
+                labelText: 'MAC Address',
+                hintText: '00:11:22:33:44:55',
+                border: OutlineInputBorder(),
               ),
-              ElevatedButton(
-                onPressed: () {
-                  final mac = macController.text.trim();
-                  final name = nameController.text.trim();
-
-                  if (mac.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('MAC Address tidak boleh kosong'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                    return;
-                  }
-
-                  final device = BluetoothDevice(
-                    address: mac,
-                    name: name.isEmpty ? 'Thermal Printer' : name,
-                  );
-
-                  setState(() {
-                    _selectedDevice = device;
-                    final exists = _bluetoothDevices.any(
-                      (d) => d.address == device.address,
-                    );
-                    if (!exists) {
-                      _bluetoothDevices.add(device);
-                    }
-                  });
-
-                  Navigator.pop(context);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: widget.brandColor,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Tambah'),
-              ),
-            ],
+              textCapitalization: TextCapitalization.characters,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Format: XX:XX:XX:XX:XX:XX\nContoh: 00:11:22:33:44:55',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
           ),
+          ElevatedButton(
+            onPressed: () {
+              final mac = macController.text.trim();
+              final name = nameController.text.trim();
+
+              if (mac.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('MAC Address tidak boleh kosong'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+
+              final device = BluetoothDevice(
+                address: mac,
+                name: name.isEmpty ? 'Thermal Printer' : name,
+              );
+
+              setState(() {
+                _selectedDevice = device;
+                final exists = _bluetoothDevices.any(
+                      (d) => d.address == device.address,
+                );
+                if (!exists) {
+                  _bluetoothDevices.add(device);
+                }
+              });
+
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: widget.brandColor,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Tambah'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1298,7 +1608,6 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
         );
         return;
       }
-
       widget.printService.configurePrinter(ip);
     } else {
       if (_selectedDevice == null) {
@@ -1310,25 +1619,63 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
         );
         return;
       }
-
       widget.printService.configureBluetoothPrinter(_selectedDevice!);
     }
 
-    final success = await widget.printService.testConnection();
+    // Save auto print setting
+    widget.printService.setAutoPrintEnabled(_autoPrintEnabled);
 
+    final success = await widget.printService.testConnection();
     if (mounted) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             success
-                ? 'Printer berhasil dikonfigurasi!'
+                ? 'Printer berhasil dikonfigurasi dan disimpan!'
                 : 'Gagal terhubung ke printer',
           ),
           backgroundColor: success ? widget.brandColor : Colors.red,
         ),
       );
     }
+  }
+
+  void _showClearConfigDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hapus Konfigurasi Printer'),
+        content: const Text(
+          'Konfigurasi printer yang tersimpan akan dihapus. Anda perlu mengkonfigurasi ulang printer untuk menggunakan fitur auto print.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              // Clear configuration
+              widget.printService.clearConfiguration();
+              Navigator.pop(context); // Close clear config dialog
+              Navigator.pop(context); // Close settings dialog
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Konfigurasi printer berhasil dihapus'),
+                  backgroundColor: widget.brandColor,
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1342,6 +1689,50 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Status koneksi tersimpan
+              if (widget.printService.isConfigured)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle,
+                        color: Colors.green[700],
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Printer tersimpan',
+                              style: TextStyle(
+                                color: Colors.green[700],
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                            Text(
+                              widget.printService.printerInfo,
+                              style: TextStyle(
+                                color: Colors.green[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
               SegmentedButton<int>(
                 segments: const [
                   ButtonSegment(
@@ -1363,9 +1754,7 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                   });
                 },
               ),
-
               const SizedBox(height: 20),
-
               if (_selectedConnectionType == 0) ...[
                 TextField(
                   controller: _ipController,
@@ -1383,7 +1772,6 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
               ],
-
               if (_selectedConnectionType == 1) ...[
                 if (_errorMessage != null)
                   Container(
@@ -1414,25 +1802,23 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                       ],
                     ),
                   ),
-
                 Row(
                   children: [
                     Expanded(
                       child: ElevatedButton.icon(
                         onPressed: _isScanning ? null : _scanBluetoothDevices,
-                        icon:
-                            _isScanning
-                                ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white,
-                                    ),
-                                  ),
-                                )
-                                : const Icon(Icons.bluetooth_searching),
+                        icon: _isScanning
+                            ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                            : const Icon(Icons.bluetooth_searching),
                         label: Text(
                           _isScanning ? 'Mencari...' : 'Lihat Paired',
                         ),
@@ -1458,9 +1844,7 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 16),
-
                 if (_bluetoothDevices.isNotEmpty) ...[
                   const Text(
                     'Perangkat Ditemukan:',
@@ -1480,44 +1864,36 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                         final device = _bluetoothDevices[index];
                         final isSelected =
                             _selectedDevice?.address == device.address;
-
                         return ListTile(
                           leading: Icon(
                             Icons.print_outlined,
-                            color:
-                                isSelected
-                                    ? widget.brandColor
-                                    : Colors.grey[600],
+                            color: isSelected
+                                ? widget.brandColor
+                                : Colors.grey[600],
                           ),
                           title: Text(
                             device.name?.isEmpty ?? true
                                 ? 'Unknown Device'
                                 : device.name!,
                             style: TextStyle(
-                              fontWeight:
-                                  isSelected
-                                      ? FontWeight.w600
-                                      : FontWeight.normal,
+                              fontWeight: isSelected
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
                             ),
                           ),
                           subtitle: Text(
                             device.address,
                             style: const TextStyle(fontSize: 11),
                           ),
-                          trailing:
-                              isSelected
-                                  ? Icon(
-                                    Icons.check_circle,
-                                    color: widget.brandColor,
-                                  )
-                                  : null,
+                          trailing: isSelected
+                              ? Icon(
+                            Icons.check_circle,
+                            color: widget.brandColor,
+                          )
+                              : null,
                           selected: isSelected,
                           selectedTileColor: widget.brandColor.withOpacity(0.1),
-                          onTap: () {
-                            setState(() {
-                              _selectedDevice = device;
-                            });
-                          },
+                          onTap: () => setState(() => _selectedDevice = device),
                         );
                       },
                     ),
@@ -1557,7 +1933,6 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                     ),
                   ),
                 ],
-
                 if (_isScanning) ...[
                   const SizedBox(height: 16),
                   Container(
@@ -1588,11 +1963,9 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                   ),
                 ],
               ],
-
               const SizedBox(height: 20),
               const Divider(),
               const SizedBox(height: 12),
-
               Row(
                 children: [
                   const Expanded(
@@ -1619,9 +1992,7 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                     child: Switch(
                       value: _autoPrintEnabled,
                       onChanged: (value) {
-                        setState(() {
-                          _autoPrintEnabled = value;
-                        });
+                        setState(() => _autoPrintEnabled = value);
                         widget.onAutoPrintChanged(value);
                       },
                       activeColor: widget.brandColor,
@@ -1634,6 +2005,13 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
         ),
       ),
       actions: [
+        // Tombol Clear Configuration
+        TextButton(
+          onPressed: () {
+            _showClearConfigDialog();
+          },
+          child: const Text('Hapus Konfigurasi'),
+        ),
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Batal'),
