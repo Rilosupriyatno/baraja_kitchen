@@ -72,11 +72,13 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   void initState() {
     super.initState();
 
+    // ✅ KUNCI: Set barType SEBELUM operasi lainnya
     _printService.setBarType(widget.barType);
 
     if (kDebugMode) {
       print('╔═══════════════════════════════════════╗');
       print('📍 Dashboard barType: ${widget.barType}');
+      print('📍 Workstation: $workstation');
       print('╚═══════════════════════════════════════╝');
     }
 

@@ -142,15 +142,27 @@ class ThermalPrintService {
     _barType = barType;
     if (kDebugMode) {
       print('🖨️ [PRINT SERVICE] Bar Type set to: ${barType ?? "null (KITCHEN)"}');
-      print('🖨️ [PRINT SERVICE] Header: "Kitchen"');
+      print('🖨️ [PRINT SERVICE] Header: "$_workstationName"');
     }
   }
 
   String get _workstationName {
-    if (_barType == null) return 'KITCHEN';
-    if (_barType == 'depan') return 'BAR DEPAN';
-    if (_barType == 'belakang') return 'BAR BELAKANG';
-    return 'BAR';
+    if (kDebugMode) {
+      print('🖨️ [GET WORKSTATION] _barType = $_barType');
+    }
+
+    switch (_barType) {
+      case 'kitchen':
+        return 'KITCHEN';
+      case 'depan':
+        return 'BAR DEPAN';
+      case 'belakang':
+        return 'BAR BELAKANG';
+      case null:
+        return 'KITCHEN';
+      default:
+        return 'BAR';
+    }
   }
 
   void configurePrinter(String ip, {int port = 9100}) {
@@ -322,8 +334,18 @@ class ThermalPrintService {
 // ============================================
 // AUTO PRINT WITH ITEM TRACKING
 // ============================================
-  Future<bool> autoPrintOrder(Order order, {bool isOpenBill = false}) async {  // ✅ TAMBAH PARAMETER
+  Future<bool> autoPrintOrder(Order order, {bool isOpenBill = false}) async {
     final workstation = _workstationName.toLowerCase().replaceAll(' ', '_');
+
+    if (kDebugMode) {
+      print('╔═══════════════════════════════════════╗');
+      print('🖨️ [AUTO PRINT] Starting...');
+      print('📝 Order ID: ${order.orderId}');
+      print('📍 _barType: $_barType');
+      print('📍 Workstation Name: $_workstationName');
+      print('📍 Workstation Key: $workstation');
+      print('╚═══════════════════════════════════════╝');
+    }
     final printerConfig = {
       'type': _connectionType == PrinterConnectionType.wifi ? 'wifi' : 'bluetooth',
       'info': printerInfo,
@@ -538,7 +560,10 @@ class ThermalPrintService {
   // ============================================
   Future<void> _generateReceiptForItems(NetworkPrinter printer, Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false}) async {
     if (kDebugMode) {
-      print('🖨️ Generating receipt for ${itemsToPrint.length} items');
+      print('🖨️ [GENERATE RECEIPT]');
+      print('   _barType: ${_barType ?? "null"}');
+      print('   Workstation: "$_workstationName"');
+      print('   Items: ${itemsToPrint.length}');
     }
 
     printer.text('BARAJA AMPHI',
@@ -550,7 +575,7 @@ class ThermalPrintService {
         ));
     printer.text(' ');
 
-    printer.text('ORDER Kitchen',
+    printer.text('ORDER $_workstationName',
         styles: const PosStyles(
           align: PosAlign.center,
           bold: true,
@@ -674,7 +699,7 @@ class ThermalPrintService {
           bold: true,
         )));
 
-    bytes.addAll(generator.text('ORDER Kitchen',
+    bytes.addAll(generator.text('ORDER $_workstationName',
         styles: const PosStyles(
           align: PosAlign.center,
           bold: true,
@@ -932,7 +957,7 @@ class ThermalPrintService {
         ));
     printer.text(' ');
 
-    printer.text('ORDER Kitchen',
+    printer.text('ORDER $_workstationName',
         styles: const PosStyles(
           align: PosAlign.center,
           bold: true,
@@ -1052,7 +1077,7 @@ class ThermalPrintService {
           bold: true,
         )));
 
-    bytes.addAll(generator.text('ORDER Kitchen',
+    bytes.addAll(generator.text('ORDER $_workstationName',
         styles: const PosStyles(
           align: PosAlign.center,
           bold: true,
@@ -1171,7 +1196,7 @@ class ThermalPrintService {
         printer.text('TEST PRINTER',
             styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
         printer.emptyLines(1);
-        printer.text('Workstation: Kitchen',
+        printer.text('Workstation: $_workstationName',
             styles: const PosStyles(align: PosAlign.center, bold: true));
         printer.emptyLines(1);
         printer.text('Koneksi WiFi berhasil!',
@@ -1212,7 +1237,7 @@ class ThermalPrintService {
       bytes.addAll(generator.text('TEST PRINTER',
           styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2)));
       bytes.addAll(generator.emptyLines(1));
-      bytes.addAll(generator.text('Workstation: Kitchen',
+      bytes.addAll(generator.text('Workstation: $_workstationName',
           styles: const PosStyles(align: PosAlign.center, bold: true)));
       bytes.addAll(generator.emptyLines(1));
       bytes.addAll(generator.text('Koneksi Bluetooth berhasil!',
