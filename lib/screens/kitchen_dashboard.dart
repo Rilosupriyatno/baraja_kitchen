@@ -50,7 +50,8 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   final Map<String, bool> _alertPlayedMap = {};
   final NotificationService _notificationService = NotificationService();
   final ThermalPrintService _printService = ThermalPrintService();
-  final Set<String> _existingOrderIds = <String>{};
+  // final Set<String> _existingOrderIds = <String>{};
+  final Set<String> _displayedItemIds = <String>{};
   final Map<String, bool> _expandedOrders = {};
   List<OutOfStockItem> _outOfStockItems = [];
   Timer? _stockCheckTimer;
@@ -71,11 +72,13 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   void initState() {
     super.initState();
 
+    // ✅ KUNCI: Set barType SEBELUM operasi lainnya
     _printService.setBarType(widget.barType);
 
     if (kDebugMode) {
       print('╔═══════════════════════════════════════╗');
       print('📍 Dashboard barType: ${widget.barType}');
+      print('📍 Workstation: $workstation');
       print('╚═══════════════════════════════════════╝');
     }
 
@@ -85,7 +88,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     _initializeTimers();
     _loadOutOfStockItems();
 
-    // Setup timer untuk check stock setiap 5 menit
     _stockCheckTimer = Timer.periodic(const Duration(minutes: 5), (_) {
       _loadOutOfStockItems();
     });
@@ -105,16 +107,9 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       },
       onStockUpdate: (stockData) {
         if (kDebugMode) {
-          print(
-            '📦 Stock updated received in dashboard: ${stockData['menuItemId']}',
-          );
-          print('📦 Full stock data: $stockData');
+          print('📦 Stock updated received in dashboard: ${stockData['menuItemId']}');
         }
-
-        // Refresh out of stock items setelah ada update
         _refreshOutOfStockAfterUpdate(stockData['menuItemId'] ?? '');
-
-        // Juga refresh stock menu list
         _loadStockMenu();
       },
     );
@@ -308,29 +303,30 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
           ? await OrderService.refreshBarOrders(widget.barType!)
           : await OrderService.refreshKitchenOrders();
       await _mergeOrdersWithAlertState(orderService);
+      // Debug print status
+      if (kDebugMode && preparing.isNotEmpty) {
+        _debugPrintStatus(preparing.first);
+      }
+
     } catch (e) {
       if (kDebugMode) {
         print('Error refreshing orders: $e');
       }
     }
   }
-
-  // ✅ FIXED: Auto-confirm waiting orders di dashboard
   Future<void> _mergeOrdersWithAlertState(
       Map<String, List<Order>> ordersMap, {
         bool isInitialLoad = false,
       }) async {
-    final newWaiting = ordersMap['waiting'] ?? []; // ✅ Orders dengan status waiting
+    final newWaiting = ordersMap['waiting'] ?? [];
     final newPreparing = ordersMap['preparing'] ?? [];
     final newDone = ordersMap['completed'] ?? [];
     final newReservations = ordersMap['reservations'] ?? [];
 
-    // ✅ AUTO-CONFIRM WAITING ORDERS (Kitchen/Bar)
+    // ✅ AUTO-CONFIRM WAITING ORDERS
     final confirmedOrders = <Order>[];
     for (var order in newWaiting) {
       if (order.orderId != null) {
-        final isNewOrder = !_existingOrderIds.contains(order.orderId);
-
         if (kDebugMode) {
           print('🚀 Auto-confirming ${order.orderType ?? 'order'} ${order.orderId} from Waiting to OnProcess');
         }
@@ -338,21 +334,11 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
         final updated = await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
 
         if (updated) {
-          // Update status order lokal
           order.status = 'OnProcess';
           confirmedOrders.add(order);
 
           if (kDebugMode) {
             print('✅ Order ${order.orderId} confirmed and moved to preparing');
-          }
-
-          // Mark as new order untuk trigger print
-          if (isNewOrder) {
-            _existingOrderIds.add(order.orderId!);
-          }
-        } else {
-          if (kDebugMode) {
-            print('⚠️ Failed to auto-confirm ${order.orderId}');
           }
         }
       }
@@ -371,10 +357,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
           order.status = 'OnProcess';
           confirmedOrders.add(order);
 
-          if (!_existingOrderIds.contains(order.orderId)) {
-            _existingOrderIds.add(order.orderId!);
-          }
-
           if (kDebugMode) {
             print('✅ Reservation ${order.orderId} confirmed and moved to preparing');
           }
@@ -385,24 +367,37 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     // Combine preparing orders
     final allPreparing = [...newPreparing, ...confirmedOrders];
 
-    // ✅ PROCESS NEW ORDERS & AUTO-PRINT
+    // ✅ PROCESS NEW ITEMS & AUTO-PRINT
     if (!isInitialLoad) {
-      final currentReservationIds = reservations.map((o) => o.orderId).toSet();
-
       for (var order in allPreparing) {
         if (order.orderId == null) continue;
 
-        final isNewOrder = !_existingOrderIds.contains(order.orderId);
-        final movedFromReservation =
-            currentReservationIds.contains(order.orderId) &&
-                order.service.contains('Reservation');
-        final wasJustConfirmed = confirmedOrders.any((o) => o.orderId == order.orderId);
+        // ✅ CEK ITEMS YANG BARU MUNCUL DI DASHBOARD
+        final newItems = <OrderItem>[];
 
-        // ✅ Trigger notification & print untuk order baru atau yang baru dikonfirmasi
-        if (isNewOrder || movedFromReservation || wasJustConfirmed) {
-          _existingOrderIds.add(order.orderId!);
+        for (final item in order.items) {
+          final isNewItem = !_displayedItemIds.contains(item.itemId);
 
-          // Play notification
+          if (isNewItem) {
+            newItems.add(item);
+            _displayedItemIds.add(item.itemId); // ✅ Mark sebagai sudah muncul
+
+            if (kDebugMode) {
+              print('🆕 NEW ITEM in dashboard: ${item.name} (${item.itemId}) from order ${order.orderId}');
+            }
+          }
+        }
+
+        // ✅ JIKA ADA ITEMS BARU, PRINT HANYA ITEMS BARU SAJA
+        if (newItems.isNotEmpty && _autoPrintEnabled && _printService.isConfigured) {
+          if (kDebugMode) {
+            print('🖨️ Attempting to print ${newItems.length} new items from order ${order.orderId}');
+            for (final item in newItems) {
+              print('   📝 ${item.name} x${item.qty}');
+            }
+          }
+
+          // Play notification untuk item baru
           _notificationService
               .playNewOrderNotification(
             order.orderId!,
@@ -410,48 +405,63 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
           )
               .catchError((e) => false);
 
-          // ✅ AUTO-PRINT untuk order yang baru masuk atau baru dikonfirmasi
-          if (_autoPrintEnabled && _printService.isConfigured) {
-            final alreadyPrinted = _printService.isAlreadyPrinted(order.orderId);
+          // ✅ DETEKSI APAKAH INI OPEN BILL
+          final isOpenBill = order.items.length > newItems.length;
 
-            if (!alreadyPrinted) {
-              if (kDebugMode) {
-                print('🖨️ Attempting auto-print for order ${order.orderId}');
-              }
+          // ✅ KUNCI: Buat order TEMPORARY yang hanya berisi items BARU
+          final tempOrderForPrint = Order(
+            orderId: order.orderId,
+            name: order.name,
+            table: order.table,
+            status: order.status,
+            items: newItems, // ✅ HANYA ITEMS BARU
+            createdAt: order.createdAt,
+            updatedAt: order.updatedAt,
+            createdAtWIB: order.createdAtWIB,
+            updatedAtWIB: order.updatedAtWIB,
+            service: order.service,
+            orderType: order.orderType,
+            reservationDateTime: order.reservationDateTime,
+            totalPrice: order.totalPrice,
+            source: order.source,
+            paymentMethod: order.paymentMethod,
+          );
 
-              _printService
-                  .autoPrintOrder(order)
-                  .then((printed) {
-                if (printed && mounted) {
-                  _showPrintSuccessSnackbar(order.orderId!);
-                } else if (!printed && kDebugMode) {
-                  print('⚠️ Auto-print failed for ${order.orderId}');
-                }
-              })
-                  .catchError((e) {
-                if (kDebugMode) {
-                  print('❌ Print error for ${order.orderId}: $e');
-                }
-              });
-            } else {
-              if (kDebugMode) {
-                print('ℹ️ Order ${order.orderId} already printed, skipping');
-              }
+          // ✅ Print order temporary dengan flag isOpenBill
+          _printService
+              .autoPrintOrder(tempOrderForPrint, isOpenBill: isOpenBill)
+              .then((printed) {
+            if (printed && mounted) {
+              _showPrintSuccessSnackbar(order.orderId!);
+            } else if (!printed && kDebugMode) {
+              print('⚠️ Auto-print failed for ${order.orderId}');
             }
-          }
+          })
+              .catchError((e) {
+            if (kDebugMode) {
+              print('❌ Print error for ${order.orderId}: $e');
+            }
+          });
+        } else if (newItems.isEmpty && kDebugMode) {
+          print('✅ Order ${order.orderId} - No new items to print');
         }
       }
 
       // ✅ Process new reservations (yang belum waktunya)
       for (var order in newReservations) {
         if (order.orderId != null &&
-            !_existingOrderIds.contains(order.orderId) &&
             !OrderService.shouldMoveReservationToPreparation(order)) {
-          if (kDebugMode) {
-            print('📅 Reservasi baru: ${order.orderId}');
-          }
 
-          _existingOrderIds.add(order.orderId!);
+          // Track items dari reservasi
+          for (final item in order.items) {
+            if (!_displayedItemIds.contains(item.itemId)) {
+              _displayedItemIds.add(item.itemId);
+
+              if (kDebugMode) {
+                print('📅 Reservasi item tracked: ${item.name} (${item.itemId})');
+              }
+            }
+          }
 
           _notificationService
               .playNewOrderNotification(
@@ -462,11 +472,15 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
         }
       }
     } else {
-      // Initial load: track semua order IDs
+      // ✅ INITIAL LOAD: Track semua items yang sudah ada
       for (var order in [...allPreparing, ...newDone, ...newReservations]) {
-        if (order.orderId != null) {
-          _existingOrderIds.add(order.orderId!);
+        for (final item in order.items) {
+          _displayedItemIds.add(item.itemId);
         }
+      }
+
+      if (kDebugMode) {
+        print('📋 Initial load: Tracked ${_displayedItemIds.length} existing items');
       }
     }
 
@@ -499,6 +513,202 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     }
   }
 
+  // Future<void> _mergeOrdersWithAlertState(
+  //     Map<String, List<Order>> ordersMap, {
+  //       bool isInitialLoad = false,
+  //     }) async {
+  //   final newWaiting = ordersMap['waiting'] ?? [];
+  //   final newPreparing = ordersMap['preparing'] ?? [];
+  //   final newDone = ordersMap['completed'] ?? [];
+  //   final newReservations = ordersMap['reservations'] ?? [];
+  //
+  //   // ✅ AUTO-CONFIRM WAITING ORDERS
+  //   final confirmedOrders = <Order>[];
+  //   for (var order in newWaiting) {
+  //     if (order.orderId != null) {
+  //       if (kDebugMode) {
+  //         print('🚀 Auto-confirming ${order.orderType ?? 'order'} ${order.orderId} from Waiting to OnProcess');
+  //       }
+  //
+  //       final updated = await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
+  //
+  //       if (updated) {
+  //         order.status = 'OnProcess';
+  //         confirmedOrders.add(order);
+  //
+  //         if (kDebugMode) {
+  //           print('✅ Order ${order.orderId} confirmed and moved to preparing');
+  //         }
+  //       }
+  //     }
+  //   }
+  //
+  //   // ✅ AUTO-CONFIRM RESERVATIONS yang sudah waktunya
+  //   for (var order in newReservations) {
+  //     if (order.orderId != null && OrderService.shouldMoveReservationToPreparation(order)) {
+  //       if (kDebugMode) {
+  //         print('📅 Auto-confirming reservation ${order.orderId} to OnProcess');
+  //       }
+  //
+  //       final updated = await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
+  //
+  //       if (updated) {
+  //         order.status = 'OnProcess';
+  //         confirmedOrders.add(order);
+  //
+  //         if (kDebugMode) {
+  //           print('✅ Reservation ${order.orderId} confirmed and moved to preparing');
+  //         }
+  //       }
+  //     }
+  //   }
+  //
+  //   // Combine preparing orders
+  //   final allPreparing = [...newPreparing, ...confirmedOrders];
+  //
+  //   // ✅ PROCESS NEW ITEMS & AUTO-PRINT
+  //   if (!isInitialLoad) {
+  //     for (var order in allPreparing) {
+  //       if (order.orderId == null) continue;
+  //
+  //       // ✅ CEK ITEMS YANG BARU MUNCUL DI DASHBOARD
+  //       final newItems = <OrderItem>[];
+  //
+  //       for (final item in order.items) {
+  //         final isNewItem = !_displayedItemIds.contains(item.itemId);
+  //
+  //         if (isNewItem) {
+  //           newItems.add(item);
+  //           _displayedItemIds.add(item.itemId); // ✅ Mark sebagai sudah muncul
+  //
+  //           if (kDebugMode) {
+  //             print('🆕 NEW ITEM in dashboard: ${item.name} (${item.itemId}) from order ${order.orderId}');
+  //           }
+  //         }
+  //       }
+  //
+  //       // ✅ JIKA ADA ITEMS BARU, PRINT HANYA ITEMS BARU SAJA
+  //       if (newItems.isNotEmpty && _autoPrintEnabled && _printService.isConfigured) {
+  //         if (kDebugMode) {
+  //           print('🖨️ Attempting to print ${newItems.length} new items from order ${order.orderId}');
+  //           for (final item in newItems) {
+  //             print('   📝 ${item.name} x${item.qty}');
+  //           }
+  //         }
+  //
+  //         // Play notification untuk item baru
+  //         _notificationService
+  //             .playNewOrderNotification(
+  //           order.orderId!,
+  //           soundPath: 'sounds/alert.mp3',
+  //         )
+  //             .catchError((e) => false);
+  //
+  //         // ✅ KUNCI: Buat order TEMPORARY yang hanya berisi items BARU
+  //         final tempOrderForPrint = Order(
+  //           orderId: order.orderId,
+  //           name: order.name,
+  //           table: order.table,
+  //           status: order.status,
+  //           items: newItems, // ✅ HANYA ITEMS BARU
+  //           createdAt: order.createdAt,
+  //           updatedAt: order.updatedAt,
+  //           createdAtWIB: order.createdAtWIB,
+  //           updatedAtWIB: order.updatedAtWIB,
+  //           service: order.service,
+  //           orderType: order.orderType,
+  //           reservationDateTime: order.reservationDateTime,
+  //           totalPrice: order.totalPrice,
+  //           source: order.source,
+  //           paymentMethod: order.paymentMethod,
+  //         );
+  //
+  //         // Print order temporary (hanya items baru)
+  //         _printService
+  //             .autoPrintOrder(tempOrderForPrint)
+  //             .then((printed) {
+  //           if (printed && mounted) {
+  //             _showPrintSuccessSnackbar(order.orderId!);
+  //           } else if (!printed && kDebugMode) {
+  //             print('⚠️ Auto-print failed for ${order.orderId}');
+  //           }
+  //         })
+  //             .catchError((e) {
+  //           if (kDebugMode) {
+  //             print('❌ Print error for ${order.orderId}: $e');
+  //           }
+  //         });
+  //       } else if (newItems.isEmpty && kDebugMode) {
+  //         print('✅ Order ${order.orderId} - No new items to print');
+  //       }
+  //     }
+  //
+  //     // ✅ Process new reservations (yang belum waktunya)
+  //     for (var order in newReservations) {
+  //       if (order.orderId != null &&
+  //           !OrderService.shouldMoveReservationToPreparation(order)) {
+  //
+  //         // Track items dari reservasi
+  //         for (final item in order.items) {
+  //           if (!_displayedItemIds.contains(item.itemId)) {
+  //             _displayedItemIds.add(item.itemId);
+  //
+  //             if (kDebugMode) {
+  //               print('📅 Reservasi item tracked: ${item.name} (${item.itemId})');
+  //             }
+  //           }
+  //         }
+  //
+  //         _notificationService
+  //             .playNewOrderNotification(
+  //           order.orderId!,
+  //           soundPath: 'sounds/ding.mp3',
+  //         )
+  //             .catchError((e) => false);
+  //       }
+  //     }
+  //   } else {
+  //     // ✅ INITIAL LOAD: Track semua items yang sudah ada
+  //     for (var order in [...allPreparing, ...newDone, ...newReservations]) {
+  //       for (final item in order.items) {
+  //         _displayedItemIds.add(item.itemId);
+  //       }
+  //     }
+  //
+  //     if (kDebugMode) {
+  //       print('📋 Initial load: Tracked ${_displayedItemIds.length} existing items');
+  //     }
+  //   }
+  //
+  //   // Initialize alert played map
+  //   for (var o in allPreparing) {
+  //     _alertPlayedMap.putIfAbsent(o.orderId ?? "", () => false);
+  //   }
+  //
+  //   // Sort orders
+  //   allPreparing.sort(
+  //         (a, b) =>
+  //         (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
+  //   );
+  //   newDone.sort(
+  //         (a, b) =>
+  //         (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
+  //   );
+  //   newReservations.sort(
+  //         (a, b) =>
+  //         (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
+  //   );
+  //
+  //   if (mounted) {
+  //     setState(() {
+  //       queue = [];
+  //       preparing = allPreparing;
+  //       done = newDone;
+  //       reservations = newReservations;
+  //     });
+  //   }
+  // }
+
   void _showPrintSuccessSnackbar(String orderId) {
     if (kDebugMode) {
       print('✅ [AUTO PRINT] Order $orderId berhasil diprint otomatis');
@@ -529,6 +739,21 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       await OrderService.updateOrderStatus(order.orderId!, 'Completed');
     }
     _showOrderCompleteDialog(order);
+  }
+
+  void _debugPrintStatus(Order order) {
+    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    print('📊 DEBUG: Order ${order.orderId}');
+    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    print('Total items: ${order.items.length}');
+    print('Items:');
+    for (final item in order.items) {
+      final isPrinted = _printService.isItemAlreadyPrinted(item.itemId);
+      print('  ${isPrinted ? "✅" : "❌"} ${item.name} (${item.itemId})');
+    }
+    print('Printed items count: ${_printService.getPrintedItemsCount(order.orderId!)}');
+    print('Order already printed: ${_printService.isAlreadyPrinted(order.orderId)}');
+    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   }
 
   void _completeBatchOrders(List<String> orderIds) async {
