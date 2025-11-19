@@ -18,7 +18,6 @@ import 'package:flutter/foundation.dart' hide Category;
 import '../widgets/out_of_stock_dialog.dart';
 import '../widgets/table_stockmenu.dart';
 import 'batch_cooking_screen.dart';
-import '../widgets/category_selection_screen.dart';
 
 class KitchenDashboard extends StatefulWidget {
   final String? barType; // 'depan', 'belakang', atau null untuk kitchen
@@ -314,6 +313,8 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       }
     }
   }
+
+  // ✅ SOLUSI: Print SEBELUM API confirmation selesai
   Future<void> _mergeOrdersWithAlertState(
       Map<String, List<Order>> ordersMap, {
         bool isInitialLoad = false,
@@ -323,156 +324,44 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     final newDone = ordersMap['completed'] ?? [];
     final newReservations = ordersMap['reservations'] ?? [];
 
-    // ✅ AUTO-CONFIRM WAITING ORDERS
+    // ✅ KUNCI: Collect orders yang perlu di-auto-confirm
+    final ordersToConfirm = <Order>[];
     final confirmedOrders = <Order>[];
+
+    // Process waiting orders
     for (var order in newWaiting) {
       if (order.orderId != null) {
-        if (kDebugMode) {
-          print('🚀 Auto-confirming ${order.orderType ?? 'order'} ${order.orderId} from Waiting to OnProcess');
-        }
-
-        final updated = await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
-
-        if (updated) {
-          order.status = 'OnProcess';
-          confirmedOrders.add(order);
-
-          if (kDebugMode) {
-            print('✅ Order ${order.orderId} confirmed and moved to preparing');
-          }
-        }
+        ordersToConfirm.add(order);
       }
     }
 
-    // ✅ AUTO-CONFIRM RESERVATIONS yang sudah waktunya
+    // Process reservations yang sudah waktunya
     for (var order in newReservations) {
       if (order.orderId != null && OrderService.shouldMoveReservationToPreparation(order)) {
-        if (kDebugMode) {
-          print('📅 Auto-confirming reservation ${order.orderId} to OnProcess');
-        }
+        ordersToConfirm.add(order);
+      }
+    }
 
-        final updated = await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
+    // ✅ OPTIMASI 1: Update status PARALLEL (tidak blocking print)
+    if (ordersToConfirm.isNotEmpty) {
+      // Fire and forget - jangan await di sini
+      _confirmOrdersInBackground(ordersToConfirm, confirmedOrders);
 
-        if (updated) {
-          order.status = 'OnProcess';
-          confirmedOrders.add(order);
-
-          if (kDebugMode) {
-            print('✅ Reservation ${order.orderId} confirmed and moved to preparing');
-          }
-        }
+      // Langsung masukkan ke preparing untuk print
+      for (var order in ordersToConfirm) {
+        order.status = 'OnProcess';
+        confirmedOrders.add(order);
       }
     }
 
     // Combine preparing orders
     final allPreparing = [...newPreparing, ...confirmedOrders];
 
-    // ✅ PROCESS NEW ITEMS & AUTO-PRINT
+    // ✅ OPTIMASI 2: PRINT IMMEDIATELY (tidak tunggu API)
     if (!isInitialLoad) {
-      for (var order in allPreparing) {
-        if (order.orderId == null) continue;
-
-        // ✅ CEK ITEMS YANG BARU MUNCUL DI DASHBOARD
-        final newItems = <OrderItem>[];
-
-        for (final item in order.items) {
-          final isNewItem = !_displayedItemIds.contains(item.itemId);
-
-          if (isNewItem) {
-            newItems.add(item);
-            _displayedItemIds.add(item.itemId); // ✅ Mark sebagai sudah muncul
-
-            if (kDebugMode) {
-              print('🆕 NEW ITEM in dashboard: ${item.name} (${item.itemId}) from order ${order.orderId}');
-            }
-          }
-        }
-
-        // ✅ JIKA ADA ITEMS BARU, PRINT HANYA ITEMS BARU SAJA
-        if (newItems.isNotEmpty && _autoPrintEnabled && _printService.isConfigured) {
-          if (kDebugMode) {
-            print('🖨️ Attempting to print ${newItems.length} new items from order ${order.orderId}');
-            for (final item in newItems) {
-              print('   📝 ${item.name} x${item.qty}');
-            }
-          }
-
-          // Play notification untuk item baru
-          _notificationService
-              .playNewOrderNotification(
-            order.orderId!,
-            soundPath: 'sounds/alert.mp3',
-          )
-              .catchError((e) => false);
-
-          // ✅ DETEKSI APAKAH INI OPEN BILL
-          final isOpenBill = order.items.length > newItems.length;
-
-          // ✅ KUNCI: Buat order TEMPORARY yang hanya berisi items BARU
-          final tempOrderForPrint = Order(
-            orderId: order.orderId,
-            name: order.name,
-            table: order.table,
-            status: order.status,
-            items: newItems, // ✅ HANYA ITEMS BARU
-            createdAt: order.createdAt,
-            updatedAt: order.updatedAt,
-            createdAtWIB: order.createdAtWIB,
-            updatedAtWIB: order.updatedAtWIB,
-            service: order.service,
-            orderType: order.orderType,
-            reservationDateTime: order.reservationDateTime,
-            totalPrice: order.totalPrice,
-            source: order.source,
-            paymentMethod: order.paymentMethod,
-          );
-
-          // ✅ Print order temporary dengan flag isOpenBill
-          _printService
-              .autoPrintOrder(tempOrderForPrint, isOpenBill: isOpenBill)
-              .then((printed) {
-            if (printed && mounted) {
-              _showPrintSuccessSnackbar(order.orderId!);
-            } else if (!printed && kDebugMode) {
-              print('⚠️ Auto-print failed for ${order.orderId}');
-            }
-          })
-              .catchError((e) {
-            if (kDebugMode) {
-              print('❌ Print error for ${order.orderId}: $e');
-            }
-          });
-        } else if (newItems.isEmpty && kDebugMode) {
-          print('✅ Order ${order.orderId} - No new items to print');
-        }
-      }
-
-      // ✅ Process new reservations (yang belum waktunya)
-      for (var order in newReservations) {
-        if (order.orderId != null &&
-            !OrderService.shouldMoveReservationToPreparation(order)) {
-
-          // Track items dari reservasi
-          for (final item in order.items) {
-            if (!_displayedItemIds.contains(item.itemId)) {
-              _displayedItemIds.add(item.itemId);
-
-              if (kDebugMode) {
-                print('📅 Reservasi item tracked: ${item.name} (${item.itemId})');
-              }
-            }
-          }
-
-          _notificationService
-              .playNewOrderNotification(
-            order.orderId!,
-            soundPath: 'sounds/ding.mp3',
-          )
-              .catchError((e) => false);
-        }
-      }
+      _processPrintQueue(allPreparing); // Fire and forget
     } else {
-      // ✅ INITIAL LOAD: Track semua items yang sudah ada
+      // Initial load: Track semua items yang sudah ada
       for (var order in [...allPreparing, ...newDone, ...newReservations]) {
         for (final item in order.items) {
           _displayedItemIds.add(item.itemId);
@@ -481,6 +370,27 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
       if (kDebugMode) {
         print('📋 Initial load: Tracked ${_displayedItemIds.length} existing items');
+      }
+    }
+
+    // Process new reservations (yang belum waktunya)
+    for (var order in newReservations) {
+      if (order.orderId != null &&
+          !OrderService.shouldMoveReservationToPreparation(order)) {
+
+        // Track items dari reservasi
+        for (final item in order.items) {
+          if (!_displayedItemIds.contains(item.itemId)) {
+            _displayedItemIds.add(item.itemId);
+          }
+        }
+
+        _notificationService
+            .playNewOrderNotification(
+          order.orderId!,
+          soundPath: 'sounds/ding.mp3',
+        )
+            .catchError((e) => false);
       }
     }
 
@@ -513,6 +423,320 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     }
   }
 
+// ✅ HELPER: Confirm orders in background (parallel)
+  Future<void> _confirmOrdersInBackground(
+      List<Order> ordersToConfirm,
+      List<Order> confirmedOrders,
+      ) async {
+    // Run all confirmations in parallel
+    final confirmFutures = ordersToConfirm.map((order) async {
+      try {
+        if (kDebugMode) {
+          print('🚀 Auto-confirming ${order.orderType ?? 'order'} ${order.orderId} from Waiting to OnProcess');
+        }
+
+        final updated = await OrderService.updateOrderStatus(
+          order.orderId!,
+          'OnProcess',
+        );
+
+        if (updated) {
+          if (kDebugMode) {
+            print('✅ Order ${order.orderId} confirmed and moved to preparing');
+          }
+        } else {
+          if (kDebugMode) {
+            print('⚠️ Failed to confirm: ${order.orderId}');
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('❌ Error confirming ${order.orderId}: $e');
+        }
+      }
+    });
+
+    // Wait for all confirmations (but don't block the UI/print)
+    await Future.wait(confirmFutures);
+  }
+
+// ✅ HELPER: Process print queue async (non-blocking)
+  void _processPrintQueue(List<Order> allPreparing) async {
+    for (var order in allPreparing) {
+      if (order.orderId == null) continue;
+
+      // Check for new items
+      final newItems = <OrderItem>[];
+
+      for (final item in order.items) {
+        final isNewItem = !_displayedItemIds.contains(item.itemId);
+
+        if (isNewItem) {
+          newItems.add(item);
+          _displayedItemIds.add(item.itemId);
+
+          if (kDebugMode) {
+            print('🆕 NEW ITEM: ${item.name} (${item.itemId})');
+          }
+        }
+      }
+
+      // Print new items immediately
+      if (newItems.isNotEmpty && _autoPrintEnabled && _printService.isConfigured) {
+        if (kDebugMode) {
+          print('🖨️ FAST PRINT: ${newItems.length} items from ${order.orderId}');
+        }
+
+        // Play notification
+        _notificationService
+            .playNewOrderNotification(
+          order.orderId!,
+          soundPath: 'sounds/alert.mp3',
+        )
+            .catchError((e) => false);
+
+        // Detect open bill
+        final isOpenBill = order.items.length > newItems.length;
+
+        // Create temp order for printing
+        final tempOrderForPrint = Order(
+          orderId: order.orderId,
+          name: order.name,
+          table: order.table,
+          status: order.status,
+          items: newItems,
+          createdAt: order.createdAt,
+          updatedAt: order.updatedAt,
+          createdAtWIB: order.createdAtWIB,
+          updatedAtWIB: order.updatedAtWIB,
+          service: order.service,
+          orderType: order.orderType,
+          reservationDateTime: order.reservationDateTime,
+          totalPrice: order.totalPrice,
+          source: order.source,
+          paymentMethod: order.paymentMethod,
+        );
+
+        // ✅ OPTIMASI 3: Print tanpa await (fire and forget)
+        _printService
+            .autoPrintOrder(tempOrderForPrint, isOpenBill: isOpenBill)
+            .then((printed) {
+          if (printed && mounted) {
+            _showPrintSuccessSnackbar(order.orderId!);
+          } else if (!printed && kDebugMode) {
+            print('⚠️ Auto-print failed for ${order.orderId}');
+          }
+        })
+            .catchError((e) {
+          if (kDebugMode) {
+            print('❌ Print error for ${order.orderId}: $e');
+          }
+        });
+      }
+    }
+  }
+  //new one
+  // Future<void> _mergeOrdersWithAlertState(
+  //     Map<String, List<Order>> ordersMap, {
+  //       bool isInitialLoad = false,
+  //     }) async {
+  //   final newWaiting = ordersMap['waiting'] ?? [];
+  //   final newPreparing = ordersMap['preparing'] ?? [];
+  //   final newDone = ordersMap['completed'] ?? [];
+  //   final newReservations = ordersMap['reservations'] ?? [];
+  //
+  //   // ✅ AUTO-CONFIRM WAITING ORDERS
+  //   final confirmedOrders = <Order>[];
+  //   for (var order in newWaiting) {
+  //     if (order.orderId != null) {
+  //       if (kDebugMode) {
+  //         print('🚀 Auto-confirming ${order.orderType ?? 'order'} ${order.orderId} from Waiting to OnProcess');
+  //       }
+  //
+  //       final updated = await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
+  //
+  //       if (updated) {
+  //         order.status = 'OnProcess';
+  //         confirmedOrders.add(order);
+  //
+  //         if (kDebugMode) {
+  //           print('✅ Order ${order.orderId} confirmed and moved to preparing');
+  //         }
+  //       }
+  //     }
+  //   }
+  //
+  //   // ✅ AUTO-CONFIRM RESERVATIONS yang sudah waktunya
+  //   for (var order in newReservations) {
+  //     if (order.orderId != null && OrderService.shouldMoveReservationToPreparation(order)) {
+  //       if (kDebugMode) {
+  //         print('📅 Auto-confirming reservation ${order.orderId} to OnProcess');
+  //       }
+  //
+  //       final updated = await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
+  //
+  //       if (updated) {
+  //         order.status = 'OnProcess';
+  //         confirmedOrders.add(order);
+  //
+  //         if (kDebugMode) {
+  //           print('✅ Reservation ${order.orderId} confirmed and moved to preparing');
+  //         }
+  //       }
+  //     }
+  //   }
+  //
+  //   // Combine preparing orders
+  //   final allPreparing = [...newPreparing, ...confirmedOrders];
+  //
+  //   // ✅ PROCESS NEW ITEMS & AUTO-PRINT
+  //   if (!isInitialLoad) {
+  //     for (var order in allPreparing) {
+  //       if (order.orderId == null) continue;
+  //
+  //       // ✅ CEK ITEMS YANG BARU MUNCUL DI DASHBOARD
+  //       final newItems = <OrderItem>[];
+  //
+  //       for (final item in order.items) {
+  //         final isNewItem = !_displayedItemIds.contains(item.itemId);
+  //
+  //         if (isNewItem) {
+  //           newItems.add(item);
+  //           _displayedItemIds.add(item.itemId); // ✅ Mark sebagai sudah muncul
+  //
+  //           if (kDebugMode) {
+  //             print('🆕 NEW ITEM in dashboard: ${item.name} (${item.itemId}) from order ${order.orderId}');
+  //           }
+  //         }
+  //       }
+  //
+  //       // ✅ JIKA ADA ITEMS BARU, PRINT HANYA ITEMS BARU SAJA
+  //       if (newItems.isNotEmpty && _autoPrintEnabled && _printService.isConfigured) {
+  //         if (kDebugMode) {
+  //           print('🖨️ Attempting to print ${newItems.length} new items from order ${order.orderId}');
+  //           for (final item in newItems) {
+  //             print('   📝 ${item.name} x${item.qty}');
+  //           }
+  //         }
+  //
+  //         // Play notification untuk item baru
+  //         _notificationService
+  //             .playNewOrderNotification(
+  //           order.orderId!,
+  //           soundPath: 'sounds/alert.mp3',
+  //         )
+  //             .catchError((e) => false);
+  //
+  //         // ✅ DETEKSI APAKAH INI OPEN BILL
+  //         final isOpenBill = order.items.length > newItems.length;
+  //
+  //         // ✅ KUNCI: Buat order TEMPORARY yang hanya berisi items BARU
+  //         final tempOrderForPrint = Order(
+  //           orderId: order.orderId,
+  //           name: order.name,
+  //           table: order.table,
+  //           status: order.status,
+  //           items: newItems, // ✅ HANYA ITEMS BARU
+  //           createdAt: order.createdAt,
+  //           updatedAt: order.updatedAt,
+  //           createdAtWIB: order.createdAtWIB,
+  //           updatedAtWIB: order.updatedAtWIB,
+  //           service: order.service,
+  //           orderType: order.orderType,
+  //           reservationDateTime: order.reservationDateTime,
+  //           totalPrice: order.totalPrice,
+  //           source: order.source,
+  //           paymentMethod: order.paymentMethod,
+  //         );
+  //
+  //         // ✅ Print order temporary dengan flag isOpenBill
+  //         _printService
+  //             .autoPrintOrder(tempOrderForPrint, isOpenBill: isOpenBill)
+  //             .then((printed) {
+  //           if (printed && mounted) {
+  //             _showPrintSuccessSnackbar(order.orderId!);
+  //           } else if (!printed && kDebugMode) {
+  //             print('⚠️ Auto-print failed for ${order.orderId}');
+  //           }
+  //         })
+  //             .catchError((e) {
+  //           if (kDebugMode) {
+  //             print('❌ Print error for ${order.orderId}: $e');
+  //           }
+  //         });
+  //       } else if (newItems.isEmpty && kDebugMode) {
+  //         print('✅ Order ${order.orderId} - No new items to print');
+  //       }
+  //     }
+  //
+  //     // ✅ Process new reservations (yang belum waktunya)
+  //     for (var order in newReservations) {
+  //       if (order.orderId != null &&
+  //           !OrderService.shouldMoveReservationToPreparation(order)) {
+  //
+  //         // Track items dari reservasi
+  //         for (final item in order.items) {
+  //           if (!_displayedItemIds.contains(item.itemId)) {
+  //             _displayedItemIds.add(item.itemId);
+  //
+  //             if (kDebugMode) {
+  //               print('📅 Reservasi item tracked: ${item.name} (${item.itemId})');
+  //             }
+  //           }
+  //         }
+  //
+  //         _notificationService
+  //             .playNewOrderNotification(
+  //           order.orderId!,
+  //           soundPath: 'sounds/ding.mp3',
+  //         )
+  //             .catchError((e) => false);
+  //       }
+  //     }
+  //   } else {
+  //     // ✅ INITIAL LOAD: Track semua items yang sudah ada
+  //     for (var order in [...allPreparing, ...newDone, ...newReservations]) {
+  //       for (final item in order.items) {
+  //         _displayedItemIds.add(item.itemId);
+  //       }
+  //     }
+  //
+  //     if (kDebugMode) {
+  //       print('📋 Initial load: Tracked ${_displayedItemIds.length} existing items');
+  //     }
+  //   }
+  //
+  //   // Initialize alert played map
+  //   for (var o in allPreparing) {
+  //     _alertPlayedMap.putIfAbsent(o.orderId ?? "", () => false);
+  //   }
+  //
+  //   // Sort orders
+  //   allPreparing.sort(
+  //         (a, b) =>
+  //         (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
+  //   );
+  //   newDone.sort(
+  //         (a, b) =>
+  //         (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
+  //   );
+  //   newReservations.sort(
+  //         (a, b) =>
+  //         (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
+  //   );
+  //
+  //   if (mounted) {
+  //     setState(() {
+  //       queue = [];
+  //       preparing = allPreparing;
+  //       done = newDone;
+  //       reservations = newReservations;
+  //     });
+  //   }
+  // }
+
+
+  //old
   // Future<void> _mergeOrdersWithAlertState(
   //     Map<String, List<Order>> ordersMap, {
   //       bool isInitialLoad = false,
