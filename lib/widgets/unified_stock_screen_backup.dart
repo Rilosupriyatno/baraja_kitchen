@@ -1,17 +1,18 @@
-// screens/unified_stock_screen.dart
+// screens/unified_stock_screen_backup.dart
 import 'package:flutter/material.dart';
 import '../services/stockmenu_service.dart';
+import '../services/stock_cache_manager.dart';
 import '../models/category_model.dart';
 import '../models/stock_menu.dart';
 
 class UnifiedStockScreen extends StatefulWidget {
   final String workstation;
-  final String? preSelectedCategoryId; // ✨ Parameter untuk pre-select category
+  final String? preSelectedCategoryId;
 
   const UnifiedStockScreen({
     super.key,
     required this.workstation,
-    this.preSelectedCategoryId, // ✨ Optional parameter
+    this.preSelectedCategoryId,
   });
 
   @override
@@ -31,6 +32,7 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
   bool _isInitialLoading = true;
   bool _isRefreshing = false;
   bool _isSyncing = false;
+  bool _isLoadingFromCache = false; // ✨ Flag untuk loading dari cache
   double _loadingProgress = 0.0;
   String _loadingMessage = '';
   String _errorMessage = '';
@@ -38,18 +40,19 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
   final TextEditingController _searchController = TextEditingController();
   final Color _brandColor = Color(0xFF077A4B);
 
-  // ✨ State untuk mode edit di dialog
   final Set<String> _editingItems = {};
   final Map<String, TextEditingController> _editControllers = {};
 
-  // ✨ ScrollController untuk auto-scroll ke kategori
   final ScrollController _categoryScrollController = ScrollController();
   final ScrollController _menuScrollController = ScrollController();
+
+  // ✨ Cache Manager Instance
+  final _cacheManager = StockCacheManager();
 
   @override
   void initState() {
     super.initState();
-    _loadAllData();
+    _loadData();
     _searchController.addListener(_filterMenus);
   }
 
@@ -67,7 +70,90 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
     super.dispose();
   }
 
-  Future<void> _loadAllData() async {
+  /// ✨ Main load method - checks cache first
+  Future<void> _loadData() async {
+    // Check if data is already cached
+    if (_cacheManager.isDataLoaded(widget.workstation)) {
+      print('📦 Loading from cache for ${widget.workstation}');
+      _loadFromCache();
+    } else {
+      print('🌐 Loading from server for ${widget.workstation}');
+      await _loadAllDataFromServer();
+    }
+  }
+
+  /// ✨ Load data from cache (instant)
+  void _loadFromCache() {
+    setState(() {
+      _isLoadingFromCache = true;
+      _loadingMessage = 'Memuat dari cache...';
+    });
+
+    final cachedCategories = _cacheManager.getCachedCategories(widget.workstation);
+    final cachedMenus = _cacheManager.getAllCachedMenus(widget.workstation);
+
+    if (cachedCategories != null && cachedMenus != null) {
+      setState(() {
+        _categories = cachedCategories;
+        _menuCache.clear();
+        _menuCache.addAll(cachedMenus);
+        _isInitialLoading = false;
+        _isLoadingFromCache = false;
+
+        // Auto-select category
+        if (widget.preSelectedCategoryId != null && _categories.isNotEmpty) {
+          try {
+            _selectedCategory = _categories.firstWhere(
+                  (cat) => cat.id == widget.preSelectedCategoryId,
+            );
+          } catch (e) {
+            _selectedCategory = _categories.first;
+          }
+        } else if (_categories.isNotEmpty) {
+          _selectedCategory = _categories.first;
+        }
+
+        _displayMenusFromCache();
+
+        // Auto-scroll to selected category
+        if (widget.preSelectedCategoryId != null && _selectedCategory != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _scrollToSelectedCategory();
+          });
+        }
+      });
+
+      // Show cache info
+      final cacheInfo = _cacheManager.getCacheInfo(widget.workstation);
+      print('✅ Loaded from cache: ${cacheInfo['totalMenusCount']} menus');
+
+      // Show snackbar
+      // WidgetsBinding.instance.addPostFrameCallback((_) {
+      //   if (mounted) {
+      //     ScaffoldMessenger.of(context).showSnackBar(
+      //       SnackBar(
+      //         content: Row(
+      //           children: [
+      //             const Icon(Icons.cached, color: Colors.white, size: 20),
+      //             const SizedBox(width: 8),
+      //             Text('Data dimuat dari cache (${cacheInfo['totalMenusCount']} menu)'),
+      //           ],
+      //         ),
+      //         backgroundColor: Colors.blue,
+      //         duration: const Duration(seconds: 2),
+      //       ),
+      //     );
+      //   }
+      // });
+    } else {
+      // Cache corrupted, load from server
+      print('⚠️ Cache corrupted, loading from server');
+      _loadAllDataFromServer();
+    }
+  }
+
+  /// ✨ Load all data from server and save to cache
+  Future<void> _loadAllDataFromServer() async {
     setState(() {
       _isInitialLoading = true;
       _loadingProgress = 0.0;
@@ -88,6 +174,9 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
           _loadingProgress = 0.1;
         });
       }
+
+      // ✨ Save categories to cache
+      _cacheManager.saveCategories(widget.workstation, categories);
 
       _menuCache.clear();
       final totalCategories = categories.length;
@@ -137,20 +226,25 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
         _menuCache[entry.key] = entry.value;
       }
 
+      // ✨ Save all menus to cache
+      _cacheManager.saveAllMenus(widget.workstation, Map.from(_menuCache));
+
+      // ✨ Mark as loaded
+      _cacheManager.markAsLoaded(widget.workstation);
+
       if (mounted) {
         setState(() {
           _loadingProgress = 1.0;
           _loadingMessage = 'Selesai!';
           _isInitialLoading = false;
 
-          // ✨ Auto-select category berdasarkan preSelectedCategoryId
+          // Auto-select category
           if (widget.preSelectedCategoryId != null && categories.isNotEmpty) {
             try {
               _selectedCategory = categories.firstWhere(
                     (cat) => cat.id == widget.preSelectedCategoryId,
               );
             } catch (e) {
-              // Jika kategori tidak ditemukan, pilih yang pertama
               _selectedCategory = categories.first;
             }
           } else if (categories.isNotEmpty) {
@@ -159,7 +253,7 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
 
           _displayMenusFromCache();
 
-          // ✨ Auto-scroll ke kategori yang dipilih setelah loading selesai
+          // Auto-scroll to selected category
           if (widget.preSelectedCategoryId != null &&
               _selectedCategory != null) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -168,6 +262,8 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
           }
         });
       }
+
+      print('✅ Data loaded and cached: ${_menuCache.length} categories');
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -178,6 +274,7 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
     }
   }
 
+  /// ✨ Refresh data (force reload from server)
   Future<void> _refreshData() async {
     if (_isRefreshing) return;
 
@@ -199,6 +296,9 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
           _loadingProgress = 0.1;
         });
       }
+
+      // ✨ Update cache
+      _cacheManager.saveCategories(widget.workstation, categories);
 
       _menuCache.clear();
       final totalCategories = categories.length;
@@ -242,6 +342,9 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
         _menuCache[entry.key] = entry.value;
       }
 
+      // ✨ Update cache
+      _cacheManager.saveAllMenus(widget.workstation, Map.from(_menuCache));
+
       if (mounted) {
         setState(() {
           _loadingProgress = 1.0;
@@ -254,7 +357,13 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Data berhasil diperbarui'),
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Data berhasil diperbarui'),
+              ],
+            ),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 2),
           ),
@@ -324,15 +433,13 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
     _displayMenusFromCache();
   }
 
-  // ✨ Method untuk scroll ke kategori yang dipilih
   void _scrollToSelectedCategory() {
     if (_selectedCategory == null) return;
 
     final index = _categories.indexWhere((cat) =>
     cat.id == _selectedCategory!.id);
     if (index >= 0 && _categoryScrollController.hasClients) {
-      // Hitung posisi scroll (tinggi card + margin)
-      const double itemHeight = 80.0; // Approximate height per category card
+      const double itemHeight = 80.0;
       final double offset = index * itemHeight;
 
       _categoryScrollController.animateTo(
@@ -392,6 +499,9 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
       };
 
       menu.manualStock = newStock;
+
+      // ✨ Update cache with new stock value
+      _cacheManager.updateMenuItem(widget.workstation, _selectedCategory!.id, menu);
     }
 
     setState(() {
@@ -539,6 +649,13 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
                                           _filteredMenus.first,
                                         );
                                         menu.manualStock = newStock;
+
+                                        // ✨ Update cache
+                                        _cacheManager.updateMenuItem(
+                                            widget.workstation,
+                                            _selectedCategory!.id,
+                                            menu
+                                        );
                                       });
 
                                       ScaffoldMessenger.of(context)
@@ -625,6 +742,13 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
 
                                     _unsyncedChanges.remove(menuItemId);
                                     _editControllers.remove(menuItemId);
+
+                                    // ✨ Update cache
+                                    _cacheManager.updateMenuItem(
+                                        widget.workstation,
+                                        _selectedCategory!.id,
+                                        menu
+                                    );
                                   });
 
                                   Navigator.pop(context);
@@ -819,7 +943,7 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                Icons.inventory_2_outlined,
+                _isLoadingFromCache ? Icons.cached : Icons.inventory_2_outlined,
                 size: 80,
                 color: widget.workstation == 'bar'
                     ? Colors.blue[700]
@@ -827,7 +951,7 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
               ),
               const SizedBox(height: 32),
               Text(
-                'Memuat Data Stok',
+                _isLoadingFromCache ? 'Memuat dari Cache' : 'Memuat Data Stok',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -841,26 +965,31 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
                 width: 300,
                 child: Column(
                   children: [
-                    LinearProgressIndicator(
-                      value: _loadingProgress,
-                      backgroundColor: Colors.grey.shade200,
-                      color: widget.workstation == 'bar'
-                          ? Colors.blue[700]
-                          : _brandColor,
-                      minHeight: 8,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      '${(_loadingProgress * 100).toInt()}%',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                    if (!_isLoadingFromCache) ...[
+                      LinearProgressIndicator(
+                        value: _loadingProgress,
+                        backgroundColor: Colors.grey.shade200,
                         color: widget.workstation == 'bar'
                             ? Colors.blue[700]
                             : _brandColor,
+                        minHeight: 8,
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      Text(
+                        '${(_loadingProgress * 100).toInt()}%',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: widget.workstation == 'bar'
+                              ? Colors.blue[700]
+                              : _brandColor,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (_isLoadingFromCache)
+                      const CircularProgressIndicator(),
                     const SizedBox(height: 8),
                     Text(
                       _loadingMessage,
@@ -955,7 +1084,7 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
     }
 
     return ListView.builder(
-      controller: _categoryScrollController, // ✨ Tambahkan controller
+      controller: _categoryScrollController,
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 48),
       itemCount: _categories.length,
       itemBuilder: (context, index) {
@@ -964,7 +1093,6 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
         final menuCount =
             _menuCache[category.id]?.length ?? category.itemCount;
 
-        // ✨ Highlight kategori yang dipilih dari dialog
         final isPreSelected = widget.preSelectedCategoryId == category.id;
 
         return AnimatedContainer(
@@ -1017,7 +1145,6 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        // ✨ Badge untuk kategori yang baru dipilih dari dialog
                         if (isPreSelected && !isSelected)
                           Container(
                             padding: const EdgeInsets.symmetric(
@@ -1094,7 +1221,6 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
 
     return ListView.builder(
       controller: _menuScrollController,
-      // ✨ Tambahkan controller untuk future use
       padding: const EdgeInsets.all(12),
       itemCount: _filteredMenus.length,
       itemBuilder: (context, index) {
@@ -1246,7 +1372,6 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
         .where((menu) => _selectedMenuIds.contains(menu.menuItemId))
         .toList();
 
-    // ✨ Hitung tinggi tombol + padding dinamis
     final bool hasButton = _pendingUpdates.isNotEmpty ||
         _selectedMenuIds.isNotEmpty;
     final double bottomPadding = hasButton ? 80.0 : 12.0;
@@ -1299,7 +1424,7 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
               left: 12,
               right: 12,
               top: 12,
-              bottom: bottomPadding, // ✨ Padding dinamis
+              bottom: bottomPadding,
             ),
             itemCount: selectedMenus.length,
             itemBuilder: (context, index) {
@@ -1362,45 +1487,43 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
             },
           ),
         ),
-        // ✨ Tombol hanya muncul jika ada menu yang dipilih
         if (_selectedMenuIds.isNotEmpty)
-    Container(
-    padding: const EdgeInsets.fromLTRB(12, 12, 12, 48), // ⬅️ padding bawah 24
-    decoration: BoxDecoration(
-    color: Colors.white,
-    boxShadow: [
-    BoxShadow(
-    color: Colors.black.withOpacity(0.1),
-    blurRadius: 4,
-    offset: const Offset(0, -2),
-    ),
-    ],
-    ),
-    child: SizedBox(
-    width: double.infinity,
-    child: ElevatedButton.icon(
-    onPressed: _pendingUpdates.isEmpty ? null : _saveSelectedUpdates,
-    style: ElevatedButton.styleFrom(
-    backgroundColor: Colors.orange,
-    foregroundColor: Colors.white,
-    padding: const EdgeInsets.symmetric(vertical: 14),
-    shape: RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(8),
-    ),
-    disabledBackgroundColor: Colors.grey.shade300,
-    ),
-    icon: const Icon(Icons.save),
-    label: Text(
-    _pendingUpdates.isEmpty
-    ? 'Tidak Ada Perubahan'
-        : 'Simpan Sementara (${_pendingUpdates.length})',
-    style: const TextStyle(fontWeight: FontWeight.bold),
-    ),
-    ),
-    ),
-    )
-
-    ],
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 48),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _pendingUpdates.isEmpty ? null : _saveSelectedUpdates,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  disabledBackgroundColor: Colors.grey.shade300,
+                ),
+                icon: const Icon(Icons.save),
+                label: Text(
+                  _pendingUpdates.isEmpty
+                      ? 'Tidak Ada Perubahan'
+                      : 'Simpan Sementara (${_pendingUpdates.length})',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -1412,7 +1535,32 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Manajemen Stok - ${widget.workstation}'),
+        title: Row(
+          children: [
+            Text('Manajemen Stok - ${widget.workstation}'),
+            const SizedBox(width: 12),
+            // ✨ Cache indicator
+            if (_cacheManager.isDataLoaded(widget.workstation))
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.cached, size: 14, color: Colors.white),
+                    SizedBox(width: 4),
+                    Text(
+                      'Cached',
+                      style: TextStyle(fontSize: 11, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
         backgroundColor:
         widget.workstation == 'bar' ? Colors.blue[700] : _brandColor,
         foregroundColor: Colors.white,
@@ -1457,26 +1605,53 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
             onPressed: _isRefreshing ? null : _refreshData,
             tooltip: 'Refresh Data',
           ),
+          // ✨ Cache info menu
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) {
+              if (value == 'clear_cache') {
+                _showClearCacheDialog();
+              } else if (value == 'cache_info') {
+                _showCacheInfoDialog();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'cache_info',
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 20),
+                    SizedBox(width: 8),
+                    Text('Info Cache'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'clear_cache',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Hapus Cache', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       body: Stack(
         children: [
           LayoutBuilder(
             builder: (context, constraints) {
-              // ✨ Hitung lebar dinamis berdasarkan ukuran layar
-              final double categoryWidth = constraints.maxWidth *
-                  0.2; // 20% untuk kategori
-              final double menuWidth = constraints.maxWidth *
-                  0.5; // 50% untuk menu list
-              final double editWidth = constraints.maxWidth *
-                  0.3; // 30% untuk edit panel
+              final double categoryWidth = constraints.maxWidth * 0.2;
+              final double menuWidth = constraints.maxWidth * 0.5;
+              final double editWidth = constraints.maxWidth * 0.3;
 
               return Row(
                 children: [
-                  // Left Panel - Category List
                   Container(
                     width: categoryWidth.clamp(150.0, 250.0),
-                    // Min 150, Max 250
                     decoration: BoxDecoration(
                       color: Colors.grey.shade50,
                       border: Border(
@@ -1506,7 +1681,6 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
                       ],
                     ),
                   ),
-                  // Middle Panel - Menu List
                   Expanded(
                     child: Column(
                       children: [
@@ -1537,9 +1711,8 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
                       ],
                     ),
                   ),
-                  // Right Panel - Edit Panel
                   Container(
-                    width: editWidth.clamp(200.0, 350.0), // Min 200, Max 350
+                    width: editWidth.clamp(200.0, 350.0),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       border: Border(
@@ -1553,6 +1726,111 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
             },
           ),
           _buildRefreshOverlay(),
+        ],
+      ),
+    );
+  }
+
+  // ✨ Show cache info dialog
+  void _showCacheInfoDialog() {
+    final cacheInfo = _cacheManager.getCacheInfo(widget.workstation);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.info_outline, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('Informasi Cache'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildInfoRow('Workstation', cacheInfo['workstation']),
+            _buildInfoRow('Status', cacheInfo['isLoaded'] ? 'Loaded ✅' : 'Not Loaded'),
+            _buildInfoRow('Kategori', '${cacheInfo['categoriesCount']}'),
+            _buildInfoRow('Total Menu', '${cacheInfo['totalMenusCount']}'),
+            _buildInfoRow('Terakhir Cached', cacheInfo['lastCached']),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tutup'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            '$label:',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          Flexible(
+            child: Text(
+              value,
+              style: TextStyle(color: Colors.grey.shade700),
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✨ Show clear cache confirmation dialog
+  void _showClearCacheDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Hapus Cache?'),
+          ],
+        ),
+        content: const Text(
+          'Data akan dimuat ulang dari server saat Anda membuka halaman ini lagi. Lanjutkan?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              _cacheManager.clearCache(widget.workstation);
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.white),
+                      SizedBox(width: 8),
+                      Text('Cache berhasil dihapus'),
+                    ],
+                  ),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Hapus'),
+          ),
         ],
       ),
     );
