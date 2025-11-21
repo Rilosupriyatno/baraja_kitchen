@@ -456,24 +456,23 @@ class OrderService {
     return filteredOrders;
   }
 
-  // 🔹 Refresh dan kategorikan order untuk KITCHEN (FIXED - NO AUTO-CONFIRM)
   static Future<Map<String, List<Order>>> refreshKitchenOrders() async {
     try {
       final allOrders = await getKitchenOrders();
 
       List<Order> pending = [];
+      List<Order> waiting = [];  // ✅ TAMBAHAN: Kategori waiting
       List<Order> preparing = [];
       List<Order> completed = [];
       List<Order> reservations = [];
-
-      // ✅ Collect orders yang perlu di-auto-confirm
-      List<String> ordersToConfirm = [];
 
       for (var order in allOrders) {
         String status = order.status.toLowerCase();
 
         // Skip cancelled/paid
-        if (status == 'cancelled' || status == 'paid') continue;
+        if (status == 'cancelled' || status == 'paid') {
+          continue;
+        }
 
         bool isReservation = order.service.toLowerCase().contains('reservation') ||
             order.orderType?.toLowerCase() == 'reservation';
@@ -487,32 +486,27 @@ class OrderService {
             continue;
           }
 
-          // ✅ Check if reservation ready for preparation
           if (shouldMoveReservationToPreparation(order)) {
-            if (status == 'reserved' || status == 'waiting') {
-              // Add to auto-confirm list
-              if (order.orderId != null) {
-                ordersToConfirm.add(order.orderId!);
-              }
-              // Temporarily add to pending (will move to preparing after confirm)
-              pending.add(order);
-            } else {
-              reservations.add(order);
+            if (kDebugMode) {
+              print('📅 Reservation ${order.orderId} ready for preparation (will be auto-confirmed in dashboard)');
             }
+            // ✅ JANGAN auto-confirm di sini, biarkan dashboard yang handle
+            reservations.add(order);
+            continue;
           } else {
             reservations.add(order);
+            continue;
           }
-          continue;
         }
 
-        // ✅ Non-reservation orders
+        // ✅ Kategorikan berdasarkan status (TANPA AUTO-CONFIRM)
         switch (status) {
           case 'waiting':
-          // Auto-confirm waiting orders
-            if (order.orderId != null) {
-              ordersToConfirm.add(order.orderId!);
+          // ✅ JANGAN AUTO-CONFIRM di sini, masukkan ke kategori waiting
+            waiting.add(order);
+            if (kDebugMode) {
+              print('📥 Order ${order.orderId} in WAITING status (will be auto-confirmed in dashboard)');
             }
-            pending.add(order);
             break;
 
           case 'pending':
@@ -535,31 +529,13 @@ class OrderService {
         }
       }
 
-      // ✅ Batch confirm orders yang sudah ready
-      if (ordersToConfirm.isNotEmpty) {
-        if (kDebugMode) {
-          print('🔄 Auto-confirming ${ordersToConfirm.length} orders via batch-confirm');
-        }
-
-        // Fire and forget - don't wait for response
-        batchAutoConfirmOrders(ordersToConfirm).then((success) {
-          if (kDebugMode) {
-            print(success
-                ? '✅ Batch confirm completed'
-                : '❌ Batch confirm failed');
-          }
-        });
-      }
-
       if (kDebugMode) {
-        print('✅ Kitchen orders: pending=${pending.length}, preparing=${preparing.length}, completed=${completed.length}, reservations=${reservations.length}');
-        if (ordersToConfirm.isNotEmpty) {
-          print('🔄 Auto-confirmed: ${ordersToConfirm.length} orders');
-        }
+        print('✅ Kitchen orders: pending=${pending.length}, waiting=${waiting.length}, preparing=${preparing.length}, completed=${completed.length}, reservations=${reservations.length}');
       }
 
       return {
         'pending': pending,
+        'waiting': waiting,  // ✅ TAMBAHAN: Return waiting orders
         'preparing': preparing,
         'completed': completed,
         'reservations': reservations,
@@ -571,132 +547,46 @@ class OrderService {
       throw Exception('Error refreshing kitchen orders: $e');
     }
   }
-  // static Future<Map<String, List<Order>>> refreshKitchenOrders() async {
-  //   try {
-  //     final allOrders = await getKitchenOrders();
-  //
-  //     List<Order> pending = [];
-  //     List<Order> waiting = [];  // ✅ TAMBAHAN: Kategori waiting
-  //     List<Order> preparing = [];
-  //     List<Order> completed = [];
-  //     List<Order> reservations = [];
-  //
-  //     for (var order in allOrders) {
-  //       String status = order.status.toLowerCase();
-  //
-  //       // Skip cancelled/paid
-  //       if (status == 'cancelled' || status == 'paid') {
-  //         continue;
-  //       }
-  //
-  //       bool isReservation = order.service.toLowerCase().contains('reservation') ||
-  //           order.orderType?.toLowerCase() == 'reservation';
-  //
-  //       if (isReservation) {
-  //         if (status == 'onprocess') {
-  //           preparing.add(order);
-  //           continue;
-  //         } else if (status == 'completed') {
-  //           completed.add(order);
-  //           continue;
-  //         }
-  //
-  //         if (shouldMoveReservationToPreparation(order)) {
-  //           if (kDebugMode) {
-  //             print('📅 Reservation ${order.orderId} ready for preparation (will be auto-confirmed in dashboard)');
-  //           }
-  //           // ✅ JANGAN auto-confirm di sini, biarkan dashboard yang handle
-  //           reservations.add(order);
-  //           continue;
-  //         } else {
-  //           reservations.add(order);
-  //           continue;
-  //         }
-  //       }
-  //
-  //       // ✅ Kategorikan berdasarkan status (TANPA AUTO-CONFIRM)
-  //       switch (status) {
-  //         case 'waiting':
-  //         // ✅ JANGAN AUTO-CONFIRM di sini, masukkan ke kategori waiting
-  //           waiting.add(order);
-  //           if (kDebugMode) {
-  //             print('📥 Order ${order.orderId} in WAITING status (will be auto-confirmed in dashboard)');
-  //           }
-  //           break;
-  //
-  //         case 'pending':
-  //           pending.add(order);
-  //           break;
-  //
-  //         case 'onprocess':
-  //         case 'preparing':
-  //           preparing.add(order);
-  //           break;
-  //
-  //         case 'completed':
-  //         case 'ready':
-  //           completed.add(order);
-  //           break;
-  //
-  //         default:
-  //           pending.add(order);
-  //           break;
-  //       }
-  //     }
-  //
-  //     if (kDebugMode) {
-  //       print('✅ Kitchen orders: pending=${pending.length}, waiting=${waiting.length}, preparing=${preparing.length}, completed=${completed.length}, reservations=${reservations.length}');
-  //     }
-  //
-  //     return {
-  //       'pending': pending,
-  //       'waiting': waiting,  // ✅ TAMBAHAN: Return waiting orders
-  //       'preparing': preparing,
-  //       'completed': completed,
-  //       'reservations': reservations,
-  //     };
-  //   } catch (e) {
-  //     if (kDebugMode) {
-  //       print('❌ Error refreshing kitchen orders: $e');
-  //     }
-  //     throw Exception('Error refreshing kitchen orders: $e');
-  //   }
-  // }
 
-  // 🔹 Refresh dan kategorikan order untuk BAR (FIXED - NO AUTO-CONFIRM)
   static Future<Map<String, List<Order>>> refreshBarOrders(String barType) async {
     try {
       List<Order> allOrders;
 
+      // Coba ambil dari endpoint bar terlebih dahulu
       try {
         allOrders = await getBarOrders();
       } catch (e) {
+        // Fallback: ambil semua beverage orders
         allOrders = await getAllBeverageOrders();
       }
 
+      // Filter berdasarkan area meja (termasuk Takeaway/Pickup/Delivery)
       allOrders = _filterOrdersByBarArea(allOrders, barType);
+
+      // Filter hanya item minuman
       allOrders = _filterBeverageItems(allOrders);
 
       List<Order> pending = [];
+      List<Order> waiting = [];  // ✅ TAMBAHAN: Kategori waiting
       List<Order> preparing = [];
       List<Order> completed = [];
       List<Order> ready = [];
 
-      // ✅ Collect orders to auto-confirm
-      List<String> ordersToConfirm = [];
-
       for (var order in allOrders) {
         String status = order.status.toLowerCase();
 
-        if (status == 'cancelled' || status == 'paid') continue;
+        // Skip cancelled/paid
+        if (status == 'cancelled' || status == 'paid') {
+          continue;
+        }
 
         switch (status) {
           case 'waiting':
-          // Auto-confirm waiting orders
-            if (order.orderId != null) {
-              ordersToConfirm.add(order.orderId!);
+          // ✅ JANGAN AUTO-CONFIRM di sini
+            waiting.add(order);
+            if (kDebugMode) {
+              print('🥤 Bar order ${order.orderId} in WAITING status (will be auto-confirmed in dashboard)');
             }
-            pending.add(order);
             break;
 
           case 'pending':
@@ -724,20 +614,13 @@ class OrderService {
         }
       }
 
-      // ✅ Batch confirm
-      if (ordersToConfirm.isNotEmpty) {
-        if (kDebugMode) {
-          print('🥤 Auto-confirming ${ordersToConfirm.length} bar orders');
-        }
-        batchAutoConfirmOrders(ordersToConfirm);
-      }
-
       if (kDebugMode) {
-        print('✅ Bar $barType orders: pending=${pending.length}, preparing=${preparing.length}, ready=${ready.length}, completed=${completed.length}');
+        print('✅ Bar $barType orders: pending=${pending.length}, waiting=${waiting.length}, preparing=${preparing.length}, ready=${ready.length}, completed=${completed.length}');
       }
 
       return {
         'pending': pending,
+        'waiting': waiting,  // ✅ TAMBAHAN: Return waiting orders
         'preparing': preparing,
         'ready': ready,
         'completed': completed,
@@ -749,92 +632,7 @@ class OrderService {
       throw Exception('Error refreshing bar orders: $e');
     }
   }
-  // static Future<Map<String, List<Order>>> refreshBarOrders(String barType) async {
-  //   try {
-  //     List<Order> allOrders;
-  //
-  //     // Coba ambil dari endpoint bar terlebih dahulu
-  //     try {
-  //       allOrders = await getBarOrders();
-  //     } catch (e) {
-  //       // Fallback: ambil semua beverage orders
-  //       allOrders = await getAllBeverageOrders();
-  //     }
-  //
-  //     // Filter berdasarkan area meja (termasuk Takeaway/Pickup/Delivery)
-  //     allOrders = _filterOrdersByBarArea(allOrders, barType);
-  //
-  //     // Filter hanya item minuman
-  //     allOrders = _filterBeverageItems(allOrders);
-  //
-  //     List<Order> pending = [];
-  //     List<Order> waiting = [];  // ✅ TAMBAHAN: Kategori waiting
-  //     List<Order> preparing = [];
-  //     List<Order> completed = [];
-  //     List<Order> ready = [];
-  //
-  //     for (var order in allOrders) {
-  //       String status = order.status.toLowerCase();
-  //
-  //       // Skip cancelled/paid
-  //       if (status == 'cancelled' || status == 'paid') {
-  //         continue;
-  //       }
-  //
-  //       switch (status) {
-  //         case 'waiting':
-  //         // ✅ JANGAN AUTO-CONFIRM di sini
-  //           waiting.add(order);
-  //           if (kDebugMode) {
-  //             print('🥤 Bar order ${order.orderId} in WAITING status (will be auto-confirmed in dashboard)');
-  //           }
-  //           break;
-  //
-  //         case 'pending':
-  //           pending.add(order);
-  //           break;
-  //
-  //         case 'onprocess':
-  //         case 'preparing':
-  //           preparing.add(order);
-  //           break;
-  //
-  //         case 'ready':
-  //         case 'ready_to_serve':
-  //           ready.add(order);
-  //           break;
-  //
-  //         case 'completed':
-  //         case 'served':
-  //           completed.add(order);
-  //           break;
-  //
-  //         default:
-  //           pending.add(order);
-  //           break;
-  //       }
-  //     }
-  //
-  //     if (kDebugMode) {
-  //       print('✅ Bar $barType orders: pending=${pending.length}, waiting=${waiting.length}, preparing=${preparing.length}, ready=${ready.length}, completed=${completed.length}');
-  //     }
-  //
-  //     return {
-  //       'pending': pending,
-  //       'waiting': waiting,  // ✅ TAMBAHAN: Return waiting orders
-  //       'preparing': preparing,
-  //       'ready': ready,
-  //       'completed': completed,
-  //     };
-  //   } catch (e) {
-  //     if (kDebugMode) {
-  //       print('❌ [BAR SERVICE] Error: $e');
-  //     }
-  //     throw Exception('Error refreshing bar orders: $e');
-  //   }
-  // }
 
-  // 🔹 Legacy method untuk backward compatibility
   static Future<Map<String, List<Order>>> refreshOrders() async {
     return await refreshKitchenOrders();
   }
