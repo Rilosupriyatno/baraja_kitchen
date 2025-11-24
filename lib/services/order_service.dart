@@ -116,7 +116,7 @@ class OrderService {
 
     try {
       if (kDebugMode) {
-        print('🔄 Batch confirming ${orderIds.length} orders: $orderIds');
+        print('📤 Batch confirming ${orderIds.length} orders: $orderIds');
       }
 
       final response = await http.post(
