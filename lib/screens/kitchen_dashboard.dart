@@ -71,6 +71,9 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
         stockmenu = data;
         _isLoading = false;
       });
+
+      // ✅ Auto select first order after initial load
+      autoSelectFirstOrder();
     } catch (e) {
       print('Error loading stock menu: $e');
       setState(() {
@@ -101,6 +104,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
           _alertPlayedMap[order.orderId ?? ""] = true;
         }
       }
+<<<<<<< Updated upstream
     }
   }
 
@@ -137,6 +141,11 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     try {
       final orderService = await OrderService.refreshOrders();
       await _mergeOrdersWithAlertState(orderService);
+=======
+
+      // ✅ Keep selection or auto-select if needed
+      maintainOrAutoSelectOrder();
+>>>>>>> Stashed changes
     } catch (e) {
       if (kDebugMode) {
         print('Error refreshing orders: $e');
@@ -144,11 +153,121 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     }
   }
 
+<<<<<<< Updated upstream
   Future<void> _mergeOrdersWithAlertState(
     Map<String, List<Order>> ordersMap, {
     bool isInitialLoad = false,
   }) async {
     final newQueue = ordersMap['pending'] ?? [];
+=======
+  Future<void> loadStockMenu() async {
+    setState(() => isLoading = true);
+    try {
+      final data = await StockMenuService.getMenusByCategoryAndWorkstation('', workstation);
+      setState(() {
+        stockmenu = data.menus;
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() => isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> loadCategories() async {
+    try {
+      final data = await StockMenuService.getCategoriesByWorkstation(workstation);
+      setState(() {
+        categories = data;
+      });
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error loading categories: $e');
+      }
+    }
+  }
+
+  Future<void> loadOutOfStockItems() async {
+    try {
+      final items = await StockMenuService.getOutOfStockItems(workstation);
+      if (mounted) {
+        setState(() {
+          outOfStockItems = items;
+        });
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error loading out of stock items: $e');
+      }
+    }
+  }
+
+  // ✅ NEW: Auto select first order based on current tab
+  void autoSelectFirstOrder() {
+    if (mounted) {
+      setState(() {
+        final currentOrders = getCurrentTabOrders();
+        if (currentOrders.isNotEmpty) {
+          selectedOrder = currentOrders.first;
+          showDetailPanel = true;
+        } else {
+          selectedOrder = null;
+          showDetailPanel = false;
+        }
+      });
+    }
+  }
+
+  // ✅ NEW: Maintain selection or auto-select if needed
+  void maintainOrAutoSelectOrder() {
+    if (mounted) {
+      setState(() {
+        final currentOrders = getCurrentTabOrders();
+
+        // If no order selected, auto-select first
+        if (selectedOrder == null && currentOrders.isNotEmpty) {
+          selectedOrder = currentOrders.first;
+          showDetailPanel = true;
+        }
+        // If selected order no longer exists, select first available
+        else if (selectedOrder != null &&
+            !currentOrders.any((o) => o.orderId == selectedOrder!.orderId)) {
+          if (currentOrders.isNotEmpty) {
+            selectedOrder = currentOrders.first;
+            showDetailPanel = true;
+          } else {
+            selectedOrder = null;
+            showDetailPanel = false;
+          }
+        }
+      });
+    }
+  }
+
+  // ✅ NEW: Get orders based on current tab
+  List<Order> getCurrentTabOrders() {
+    switch (selectedTabIndex) {
+      case 0: // Preparing
+        return preparing;
+      case 2: // Done
+        return done;
+      case 3: // Reservations
+        return reservations;
+      default:
+        return [];
+    }
+  }
+
+  Future<void> mergeOrdersWithAlertState(
+      Map<String, List<Order>> ordersMap, {
+        bool isInitialLoad = false,
+      }) async {
+    final newWaiting = ordersMap['waiting'] ?? [];
+>>>>>>> Stashed changes
     final newPreparing = ordersMap['preparing'] ?? [];
     final newDone = ordersMap['completed'] ?? [];
     final newReservations = ordersMap['reservations'] ?? [];
@@ -332,9 +451,345 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     }
   }
 
+<<<<<<< Updated upstream
   void _showPrintSuccessSnackbar(String orderId) {
     if (kDebugMode) {
       // print('✅ [AUTO PRINT] Order $orderId berhasil diprint otomatis');
+=======
+  Future<void> confirmOrdersInBackground(List<Order> ordersToConfirm) async {
+    // Run all confirmations in parallel
+    final confirmFutures = ordersToConfirm.map((order) async {
+      try {
+        if (kDebugMode) {
+          print('🚀 Auto-confirming ${order.orderType ?? 'order'} ${order.orderId}');
+        }
+
+        final updated = await OrderService.updateOrderStatus(
+          order.orderId!,
+          'OnProcess',
+        );
+
+        if (updated) {
+          if (kDebugMode) {
+            print('✅ Order ${order.orderId} confirmed');
+          }
+        } else {
+          if (kDebugMode) {
+            print('⚠️ Failed to confirm: ${order.orderId}');
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('❌ Error confirming ${order.orderId}: $e');
+        }
+      }
+    });
+
+    // Wait for all confirmations (but don't block the UI/print)
+    await Future.wait(confirmFutures);
+  }
+
+  void processPrintQueue(List<Order> allPreparing) async {
+    for (var order in allPreparing) {
+      if (order.orderId == null) continue;
+
+      // Check for new items
+      final newItems = <OrderItem>[];
+
+      for (final item in order.items) {
+        if (!displayedItemIds.contains(item.itemId)) {
+          newItems.add(item);
+          displayedItemIds.add(item.itemId);
+
+          if (kDebugMode) {
+            print('🆕 NEW ITEM: ${item.name} (${item.itemId})');
+          }
+        }
+      }
+
+      // Print new items immediately
+      if (newItems.isNotEmpty && autoPrintEnabled && printService.isConfigured) {
+        await autoPrintNewItems(order, newItems);
+      }
+    }
+  }
+
+  Future<void> autoPrintNewItems(Order order, List<OrderItem> newItems) async {
+    if (kDebugMode) {
+      print('🖨️ Attempting to print ${newItems.length} new items from ${order.orderId}');
+    }
+
+    // Play notification
+    notificationService.playNewOrderNotification(
+      order.orderId!,
+      soundPath: 'sounds/alert.mp3',
+    ).catchError((e) => false);
+
+    // Detect open bill
+    final isOpenBill = order.items.length > newItems.length;
+
+    // Create temp order for printing
+    final tempOrderForPrint = Order(
+      orderId: order.orderId,
+      name: order.name,
+      table: order.table,
+      status: order.status,
+      items: newItems,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      createdAtWIB: order.createdAtWIB,
+      updatedAtWIB: order.updatedAtWIB,
+      service: order.service,
+      orderType: order.orderType,
+      reservationDateTime: order.reservationDateTime,
+      totalPrice: order.totalPrice,
+      source: order.source,
+      paymentMethod: order.paymentMethod,
+    );
+
+    // ✅ Print with isOpenBill flag
+    printService.autoPrintOrder(tempOrderForPrint, isOpenBill: isOpenBill).then((printed) {
+      if (printed && mounted) {
+        showPrintSuccessSnackbar(order.orderId!);
+      }
+    }).catchError((e) {
+      if (kDebugMode) {
+        print('❌ Print error: $e');
+      }
+    });
+  }
+
+  Future<void> processNewReservations(List<Order> newReservations) async {
+    for (var order in newReservations) {
+      if (order.orderId != null && !OrderService.shouldMoveReservationToPreparation(order)) {
+        // Track items from reservation
+        for (final item in order.items) {
+          if (!displayedItemIds.contains(item.itemId)) {
+            displayedItemIds.add(item.itemId);
+          }
+        }
+
+        notificationService.playNewOrderNotification(
+          order.orderId!,
+          soundPath: 'sounds/ding.mp3',
+        ).catchError((e) => false);
+      }
+    }
+  }
+
+  void trackExistingItems(List<Order> orders) {
+    for (var order in orders) {
+      for (final item in order.items) {
+        displayedItemIds.add(item.itemId);
+      }
+    }
+
+    if (kDebugMode) {
+      print('📋 Initial load: Tracked ${displayedItemIds.length} existing items');
+    }
+  }
+
+  void completeOrder(Order order) async {
+    setState(() {
+      preparing.remove(order);
+      done.add(order);
+      if (selectedOrder?.orderId == order.orderId) {
+        selectedOrder = null;
+        showDetailPanel = false;
+      }
+    });
+
+    if (order.orderId != null) {
+      await OrderService.updateOrderStatus(order.orderId!, 'Completed');
+    }
+    showOrderCompleteDialog(order);
+
+    // ✅ Auto select next order after completion
+    autoSelectFirstOrder();
+  }
+
+  void completeBatchOrders(List<String> orderIds) async {
+    for (var orderId in orderIds) {
+      final order = preparing.firstWhere(
+            (o) => o.orderId == orderId,
+        orElse: () => preparing.first,
+      );
+
+      setState(() {
+        preparing.remove(order);
+        done.add(order);
+      });
+
+      await OrderService.updateOrderStatus(orderId, 'Completed');
+    }
+
+    setState(() {
+      if (selectedOrder != null && orderIds.contains(selectedOrder!.orderId)) {
+        selectedOrder = null;
+        showDetailPanel = false;
+      }
+    });
+
+    showBatchCompleteDialog(orderIds.length);
+  }
+
+  void addTimeToOrder(Order order, int minutes) {
+    setState(() {
+      if (order.updatedAt != null) {
+        order.updatedAt = order.updatedAt!.add(Duration(minutes: minutes));
+      }
+    });
+  }
+
+  void checkForLateOrders() {
+    for (var order in queue) {
+      if (order.isLate) {
+        final alreadyPlayed = alertPlayedMap[order.orderId] ?? false;
+        if (!alreadyPlayed) {
+          alertPlayedMap[order.orderId ?? ""] = true;
+        }
+      }
+    }
+  }
+
+  List<Order> getFilteredOrders(List<Order> orders) {
+    if (search.isEmpty) return orders;
+
+    return orders.where((order) {
+      final nameMatch = order.name.toLowerCase().contains(search);
+      final itemsMatch = order.items.any((item) => item.name.toLowerCase().contains(search));
+      return nameMatch || itemsMatch;
+    }).toList();
+  }
+
+  Map<String, List<BatchItem>> groupIdenticalItemsForCount() {
+    final Map<String, List<BatchItem>> grouped = {};
+
+    for (var order in preparing) {
+      for (var item in order.items) {
+        final addonsKey = item.addons?.map((a) => a['name']).join(',') ?? '';
+        final toppingsKey = item.toppings?.map((t) => t['name']).join(',') ?? '';
+        final notesKey = item.notes ?? '';
+        final key = '${item.name}|$addonsKey|$toppingsKey|$notesKey';
+
+        if (!grouped.containsKey(key)) {
+          grouped[key] = [];
+        }
+
+        grouped[key]!.add(BatchItem(
+          orderId: order.orderId ?? '',
+          orderName: order.name,
+          tableNumber: order.table,
+          menuName: item.name,
+          quantity: item.qty,
+          addons: item.addons,
+          toppings: item.toppings,
+          notes: item.notes,
+        ));
+      }
+    }
+
+    return Map.fromEntries(
+      grouped.entries.where((entry) {
+        final totalQty = entry.value.fold(0, (sum, item) => sum + item.quantity);
+        return totalQty >= 2;
+      }),
+    );
+  }
+
+  void debugPrintStatus(Order order) {
+    print('┌────────────────────────────────────┐');
+    print('📊 DEBUG: Order ${order.orderId}');
+    print('└────────────────────────────────────┘');
+    print('Total items: ${order.items.length}');
+    for (final item in order.items) {
+      final isPrinted = printService.isItemAlreadyPrinted(item.itemId);
+      print('  ${isPrinted ? "✅" : "❌"} ${item.name} (${item.itemId})');
+    }
+  }
+
+  void handleBeverageOrder(Map<String, dynamic> beverageData) {
+    notificationService.playNewOrderNotification(
+      beverageData['orderId'] ?? 'unknown',
+      soundPath: 'sounds/alert.mp3',
+    ).catchError((e) => false);
+  }
+
+  Future<void> refreshOutOfStockAfterUpdate(String menuItemId) async {
+    try {
+      final updatedItems = await StockMenuService.getOutOfStockItems(workstation);
+
+      if (mounted) {
+        setState(() {
+          outOfStockItems = updatedItems;
+        });
+
+        if (updatedItems.isEmpty && Navigator.canPop(context)) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text('Semua stok berhasil diperbarui!'),
+                ],
+              ),
+              backgroundColor: Color(0xFF077A4B),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error refreshing out of stock: $e');
+      }
+    }
+  }
+
+  void showOutOfStockDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => OutOfStockDialog(
+        outOfStockItems: outOfStockItems,
+        workstation: workstation,
+        brandColor: brandColor,
+        onRefresh: () async {
+          await loadOutOfStockItems();
+
+          if (mounted && Navigator.canPop(context)) {
+            Navigator.pop(context);
+            if (outOfStockItems.isNotEmpty) {
+              showOutOfStockDialog();
+            }
+          }
+        },
+      ),
+    );
+  }
+
+  void showPrinterSettings() {
+    showDialog(
+      context: context,
+      builder: (context) => PrinterSettingsDialog(
+        printService: printService,
+        autoPrintEnabled: autoPrintEnabled,
+        onAutoPrintChanged: (value) {
+          setState(() {
+            autoPrintEnabled = value;
+          });
+        },
+        brandColor: brandColor,
+      ),
+    );
+  }
+
+  void showPrintSuccessSnackbar(String orderId) {
+    if (kDebugMode) {
+      print('✅ [AUTO PRINT] Order $orderId berhasil diprint otomatis');
+>>>>>>> Stashed changes
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -799,12 +1254,95 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+<<<<<<< Updated upstream
       appBar: AppBar(
         elevation: 1,
         toolbarHeight: 70,
         backgroundColor: Colors.white,
         title: Row(
           children: [
+=======
+      appBar: KitchenDashboardWidgets.buildAppBar(
+        context: context,
+        barType: widget.barType,
+        currentTime: currentTime,
+        printService: printService,
+        autoPrintEnabled: autoPrintEnabled,
+        notificationService: notificationService,
+        outOfStockItems: outOfStockItems,
+        isLoading: isLoading,
+        onPrinterSettings: showPrinterSettings,
+        onOutOfStockDialog: showOutOfStockDialog,
+        onRefresh: loadOrders,
+      ),
+      body: isLoading
+          ? KitchenDashboardWidgets.buildLoadingWidget(brandColor)
+          : errorMessage != null
+          ? KitchenDashboardWidgets.buildErrorWidget(
+        errorMessage: errorMessage,
+        brandColor: brandColor,
+        onRetry: loadOrders,
+      )
+          : Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // LEFT SIDEBAR - Navigation
+          KitchenDashboardWidgets.buildSidebar(
+            selectedTabIndex: selectedTabIndex,
+            preparing: preparing,
+            done: done,
+            reservations: reservations,
+            categories: categories,
+            brandColor: brandColor,
+            onTabSelected: (index) {
+              setState(() {
+                selectedTabIndex = index;
+                selectedOrder = null;
+                showDetailPanel = false;
+
+                if (index == 5) {
+                  navigateToCategories();
+                } else {
+                  // ✅ Auto select first order when switching tabs
+                  autoSelectFirstOrder();
+                }
+              });
+            },
+            groupIdenticalItemsForCount: groupIdenticalItemsForCount,
+          ),
+
+          // CENTER - Order List
+          Expanded(
+            flex: 2,
+            child: Container(
+              color: const Color(0xFFF9FAFB),
+              child: IndexedStack(
+                index: selectedTabIndex,
+                children: [
+                  buildOrderListCenter(preparing),
+                  BatchCookingView(
+                    orders: preparing,
+                    onBatchComplete: completeBatchOrders,
+                  ),
+                  buildOrderListCenter(done),
+                  buildOrderListCenter(reservations),
+                  TableStockmenu(
+                    stockMenu: stockmenu,
+                    onRefresh: loadStockMenu,
+                    brandColor: brandColor,
+                  ),
+                  KitchenDashboardWidgets.buildCategoriesPlaceholder(
+                    brandColor: brandColor,
+                    onNavigate: navigateToCategories,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // RIGHT - Order Detail (shown for certain tabs)
+          if (selectedTabIndex != 1 && selectedTabIndex != 4 && selectedTabIndex != 5)
+>>>>>>> Stashed changes
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
