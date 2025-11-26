@@ -1,6 +1,4 @@
-// ==========================================
-// 1. socket_service.dart - ADD IMMEDIATE PRINT LISTENERS
-// ==========================================
+// services/socket_service.dart - COMPLETE VERSION
 
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -11,14 +9,14 @@ class SocketService {
   static IO.Socket? _socket;
   static String? _currentBarType;
 
-  /// Connect ke backend socket.io dengan support immediate print
+  /// Connect to backend socket.io with immediate print support
   static void connect({
     required String outletId,
     String? barType,
     Function(Order)? onNewOrder,
     Function(Map<String, dynamic>)? onBeverageOrder,
     Function(Map<String, dynamic>)? onStockUpdate,
-    Function(Map<String, dynamic>)? onImmediatePrint, // 🔥 NEW
+    Function(Map<String, dynamic>)? onImmediatePrint,
   }) {
     final baseUrl = dotenv.env['BASE_URL'] ?? 'http://localhost:3000';
     _currentBarType = barType;
@@ -29,62 +27,73 @@ class SocketService {
           .setTransports(['websocket'])
           .enableForceNew()
           .enableAutoConnect()
+          .setReconnectionDelay(1000)
+          .setReconnectionAttempts(5)
           .build(),
     );
 
-    // 📦 Stock update events
+    _socket!.onConnect((_) {
+      print('✅ Socket connected: ${_socket!.id}');
+
+      // Join kitchen room
+      _socket!.emit('join_kitchen_room', outletId);
+      print('✅ Joined kitchen_room for outlet: $outletId');
+
+      // Join bar room if specified
+      if (_currentBarType != null && _currentBarType!.isNotEmpty) {
+        _socket!.emit('join_bar_room', _currentBarType!);
+        print('✅ Joined bar room: bar_$_currentBarType');
+      }
+    });
+
+    // ============================================
+    // 🔥 HIGH PRIORITY: IMMEDIATE PRINT HANDLERS
+    // ============================================
+
+    _socket!.on('kitchen_immediate_print', (data) {
+      print('🔥 [KITCHEN] Immediate print received at: ${DateTime.now()}');
+      print('   Order ID: ${data['orderId']}');
+      print('   Items: ${data['orderItems']?.length ?? 0}');
+
+      if (onImmediatePrint != null) {
+        onImmediatePrint(Map<String, dynamic>.from(data));
+      }
+    });
+
+    _socket!.on('beverage_immediate_print', (data) {
+      print('🔥 [BEVERAGE] Immediate print received at: ${DateTime.now()}');
+      print('   Order ID: ${data['orderId']}');
+      print('   Items: ${data['orderItems']?.length ?? 0}');
+
+      if (onImmediatePrint != null) {
+        onImmediatePrint(Map<String, dynamic>.from(data));
+      }
+    });
+
+    // ============================================
+    // STOCK UPDATE EVENTS
+    // ============================================
+
     _socket!.on('stock_updated', (data) {
-      print('📦 Stock updated event received: $data');
+      print('📦 Stock updated event: $data');
       if (onStockUpdate != null) {
         onStockUpdate(Map<String, dynamic>.from(data));
       }
     });
 
     _socket!.on('stock_calibrated', (data) {
-      print('🔄 Stock calibrated event received: $data');
+      print('🔄 Stock calibrated event: $data');
       if (onStockUpdate != null) {
         onStockUpdate(Map<String, dynamic>.from(data));
       }
     });
 
-    _socket!.onConnect((_) {
-      print('✅ Socket connected: ${_socket!.id}');
+    // ============================================
+    // ORDER EVENTS
+    // ============================================
 
-      // Join ke room dapur
-      _socket!.emitWithAck('join_kitchen_room', outletId, ack: (data) {
-        print('Joined kitchen room response: $data');
-      });
-
-      // Join ke room bar tertentu jika barType disediakan
-      if (_currentBarType != null && _currentBarType!.isNotEmpty) {
-        _socket!.emitWithAck('join_bar_room', _currentBarType!, ack: (data) {
-          print('Joined bar room response: $data');
-        });
-        print('✅ Joined bar room: bar_$_currentBarType');
-      }
-    });
-
-    // 🔥 NEW: Immediate print event untuk kitchen
-    _socket!.on('kitchen_immediate_print', (data) {
-      print('🖨️ [IMMEDIATE PRINT] Kitchen print event received: ${data['orderId']}');
-
-      if (onImmediatePrint != null) {
-        onImmediatePrint(Map<String, dynamic>.from(data));
-      }
-    });
-
-    // 🔥 NEW: Immediate print event untuk bar
-    _socket!.on('beverage_immediate_print', (data) {
-      print('🖨️ [IMMEDIATE PRINT] Beverage print event received: ${data['orderId']}');
-
-      if (onImmediatePrint != null) {
-        onImmediatePrint(Map<String, dynamic>.from(data));
-      }
-    });
-
-    // 🔹 Event: ada order baru masuk (untuk kitchen)
     _socket!.on('new_order', (data) async {
-      print('🔥 New order event received: $data');
+      print('🔥 New order event: $data');
 
       try {
         final orders = await OrderService.getKitchenOrders();
@@ -96,7 +105,6 @@ class SocketService {
       }
     });
 
-    // 🔹 Event: ada beverage order baru untuk bar
     _socket!.on('beverage_order_received', (data) {
       print('🥤 Beverage order received: $data');
 
@@ -105,10 +113,25 @@ class SocketService {
       }
     });
 
-    // 🔹 Event: update status order untuk area tertentu
     _socket!.on('area_order_update', (data) {
       print('📍 Area order update: $data');
     });
+
+    // ============================================
+    // STATUS UPDATE EVENTS
+    // ============================================
+
+    _socket!.on('status_confirmed', (data) {
+      print('✅ Order status confirmed: ${data['order_id']} -> ${data['orderStatus']}');
+    });
+
+    _socket!.on('order_status_updated', (data) {
+      print('🔄 Order status updated: $data');
+    });
+
+    // ============================================
+    // CONNECTION EVENTS
+    // ============================================
 
     _socket!.onDisconnect((_) {
       print('❌ Socket disconnected');
@@ -117,20 +140,37 @@ class SocketService {
     _socket!.onError((error) {
       print('❌ Socket error: $error');
     });
+
+    _socket!.onReconnect((_) {
+      print('🔄 Socket reconnected');
+
+      // Rejoin rooms after reconnect
+      _socket!.emit('join_kitchen_room', outletId);
+
+      if (_currentBarType != null && _currentBarType!.isNotEmpty) {
+        _socket!.emit('join_bar_room', _currentBarType!);
+      }
+    });
+
+    print('🔌 Socket service initialized');
   }
+
+  // ============================================
+  // BAR ROOM MANAGEMENT
+  // ============================================
 
   static void joinBarRoom(String barType) {
     if (_socket?.connected == true) {
-      _socket!.emitWithAck('join_bar_room', barType, ack: (data) {
-        print('Joined bar room response: $data');
-        _currentBarType = barType;
-      });
+      _socket!.emit('join_bar_room', barType);
+      print('✅ Joined bar room: $barType');
+      _currentBarType = barType;
     }
   }
 
   static void leaveBarRoom() {
     if (_socket?.connected == true && _currentBarType != null) {
       _socket!.emit('leave_room', 'bar_$_currentBarType');
+      print('👋 Left bar room: $_currentBarType');
       _currentBarType = null;
     }
   }
@@ -139,14 +179,18 @@ class SocketService {
     if (_socket?.connected == true) {
       if (_currentBarType != null) {
         _socket!.emit('leave_room', 'bar_$_currentBarType');
+        print('👋 Left bar room: $_currentBarType');
       }
 
-      _socket!.emitWithAck('join_bar_room', newBarType, ack: (data) {
-        print('Switched to bar room: $newBarType - Response: $data');
-        _currentBarType = newBarType;
-      });
+      _socket!.emit('join_bar_room', newBarType);
+      print('✅ Switched to bar room: $newBarType');
+      _currentBarType = newBarType;
     }
   }
+
+  // ============================================
+  // BAR ORDER EVENTS
+  // ============================================
 
   static void sendBarOrderStart({
     required String orderId,
@@ -180,6 +224,10 @@ class SocketService {
     }
   }
 
+  // ============================================
+  // UTILITY METHODS
+  // ============================================
+
   static String? getCurrentBarType() {
     return _currentBarType;
   }
@@ -188,9 +236,16 @@ class SocketService {
     return _currentBarType == barType;
   }
 
+  static bool get isConnected {
+    return _socket?.connected ?? false;
+  }
+
   static void disconnect() {
-    _socket?.disconnect();
-    _socket = null;
-    _currentBarType = null;
+    if (_socket != null) {
+      _socket!.disconnect();
+      _socket = null;
+      _currentBarType = null;
+      print('👋 Socket disconnected');
+    }
   }
 }

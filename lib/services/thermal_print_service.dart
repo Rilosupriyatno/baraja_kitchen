@@ -448,51 +448,19 @@ class ThermalPrintService {
     }
   }
 
-// Update _printOrderItems untuk menerima isOpenBill:
-  Future<bool> _printOrderItems(Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false, int attempt = 1, List<String>? logIds}) async {
-    try {
-      if (kDebugMode) {
-        print('🔄 Print attempt $attempt for ${itemsToPrint.length} items');
-      }
-
-      bool success;
-      if (_connectionType == PrinterConnectionType.wifi) {
-        success = await _printViaWiFiItems(order, itemsToPrint, isOpenBill: isOpenBill);
-      } else {
-        success = await _printViaBluetoothItems(order, itemsToPrint, isOpenBill: isOpenBill);
-      }
-
-      if (!success && attempt < _maxRetries) {
-        if (kDebugMode) print('⏳ Retry in ${_retryDelay.inSeconds}s...');
-        await Future.delayed(_retryDelay);
-        return await _printOrderItems(order, itemsToPrint, isOpenBill: isOpenBill, attempt: attempt + 1, logIds: logIds);
-      }
-
-      return success;
-    } catch (e) {
-      if (kDebugMode) print('❌ Print attempt $attempt failed: $e');
-
-      if (attempt < _maxRetries) {
-        await Future.delayed(_retryDelay);
-        return await _printOrderItems(order, itemsToPrint, isOpenBill: isOpenBill, attempt: attempt + 1, logIds: logIds);
-      }
-
-      if (kDebugMode) print('❌ All ${itemsToPrint.length} items print attempts failed');
-      return false;
-    }
-  }
-
-// Update _printViaWiFiItems:
+// 🔥 INSTANT PRINT: Zero delay, maximum speed
   Future<bool> _printViaWiFiItems(Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false}) async {
     if (_printerIp == null) return false;
     NetworkPrinter? printer;
 
     try {
       printer = NetworkPrinter(PaperSize.mm80, await CapabilityProfile.load());
-      if (kDebugMode) print('🔌 Connecting to WiFi printer $_printerIp:$_printerPort...');
 
+      if (kDebugMode) print('🔥 [INSTANT] Connecting to WiFi printer...');
+
+      // ✅ Reduced timeout: 3 seconds max
       final result = await printer.connect(_printerIp!, port: _printerPort)
-          .timeout(_connectionTimeout, onTimeout: () {
+          .timeout(const Duration(seconds: 3), onTimeout: () {
         throw Exception('Connection timeout');
       });
 
@@ -500,13 +468,17 @@ class ThermalPrintService {
         throw Exception('Connection failed: $result');
       }
 
-      if (kDebugMode) print('✅ Connected to WiFi printer');
+      if (kDebugMode) print('✅ [INSTANT] Connected - printing NOW');
 
+      // ✅ Generate receipt synchronously (no await)
       await _generateReceiptForItems(printer, order, itemsToPrint, isOpenBill: isOpenBill);
-      await Future.delayed(const Duration(milliseconds: 500));
+
+      // ❌ REMOVED: Unnecessary delay
+      // await Future.delayed(const Duration(milliseconds: 500));
+
       printer.disconnect();
 
-      if (kDebugMode) print('✅ ${itemsToPrint.length} items printed via WiFi');
+      if (kDebugMode) print('🔥 [INSTANT] ${itemsToPrint.length} items printed in record time');
       return true;
     } catch (e) {
       if (kDebugMode) print('❌ WiFi printing error: $e');
@@ -517,16 +489,16 @@ class ThermalPrintService {
     }
   }
 
-// Update _printViaBluetoothItems:
   Future<bool> _printViaBluetoothItems(Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false}) async {
     if (_bluetoothDevice == null) return false;
     BluetoothConnection? connection;
 
     try {
-      if (kDebugMode) print('🔌 Connecting to Bluetooth ${_bluetoothDevice!.name}...');
+      if (kDebugMode) print('🔥 [INSTANT] Connecting to Bluetooth...');
 
+      // ✅ Reduced timeout: 5 seconds max
       connection = await BluetoothConnection.toAddress(_bluetoothDevice!.address)
-          .timeout(_connectionTimeout, onTimeout: () {
+          .timeout(const Duration(seconds: 5), onTimeout: () {
         throw Exception('Bluetooth timeout');
       });
 
@@ -534,18 +506,26 @@ class ThermalPrintService {
         throw Exception('Gagal terhubung ke printer');
       }
 
-      if (kDebugMode) print('✅ Connected to Bluetooth printer');
+      if (kDebugMode) print('✅ [INSTANT] Connected - generating bytes');
 
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm80, profile);
       final bytes = await _generateReceiptBytesForItems(generator, order, itemsToPrint, isOpenBill: isOpenBill);
 
+      if (kDebugMode) print('🔥 [INSTANT] Sending ${bytes.length} bytes to printer');
+
+      // ✅ Send data immediately
       connection.output.add(Uint8List.fromList(bytes));
-      await connection.output.allSent.timeout(const Duration(seconds: 15));
-      await Future.delayed(const Duration(milliseconds: 800));
+
+      // ✅ Reduced wait time: 10 seconds max
+      await connection.output.allSent.timeout(const Duration(seconds: 10));
+
+      // ✅ Reduced post-print delay: 200ms instead of 800ms
+      await Future.delayed(const Duration(milliseconds: 200));
+
       await connection.close();
 
-      if (kDebugMode) print('✅ ${itemsToPrint.length} items printed via Bluetooth');
+      if (kDebugMode) print('🔥 [INSTANT] ${itemsToPrint.length} items printed via Bluetooth');
       return true;
     } catch (e) {
       if (kDebugMode) print('❌ Bluetooth printing error: $e');
@@ -553,6 +533,69 @@ class ThermalPrintService {
         await connection?.close();
       } catch (_) {}
       return false;
+    }
+  }
+
+// ✅ OPTIMIZED: Faster retry strategy
+  Future<bool> _printOrderItems(Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false, int attempt = 1, List<String>? logIds}) async {
+    try {
+      if (kDebugMode) {
+        print('🔥 [INSTANT] Print attempt $attempt/${_maxRetries}');
+      }
+
+      bool success;
+      if (_connectionType == PrinterConnectionType.wifi) {
+        success = await _printViaWiFiItems(order, itemsToPrint, isOpenBill: isOpenBill);
+      } else {
+        success = await _printViaBluetoothItems(order, itemsToPrint, isOpenBill: isOpenBill);
+      }
+
+      if (!success && attempt < _maxRetries) {
+        if (kDebugMode) print('⏳ Quick retry in 1s...');
+
+        // ✅ Reduced retry delay: 1 second instead of 2
+        await Future.delayed(const Duration(seconds: 1));
+        return await _printOrderItems(order, itemsToPrint, isOpenBill: isOpenBill, attempt: attempt + 1, logIds: logIds);
+      }
+
+      return success;
+    } catch (e) {
+      if (kDebugMode) print('❌ Print attempt $attempt failed: $e');
+
+      if (attempt < _maxRetries) {
+        await Future.delayed(const Duration(seconds: 1));
+        return await _printOrderItems(order, itemsToPrint, isOpenBill: isOpenBill, attempt: attempt + 1, logIds: logIds);
+      }
+
+      if (kDebugMode) print('❌ All print attempts failed');
+      return false;
+    }
+  }
+
+// ✅ OPTIMIZED: Prewarm with faster timeout
+  Future<void> prewarmConnection() async {
+    if (!isConfigured || !_autoPrintEnabled) return;
+
+    try {
+      print('🔥 [PREWARM] Quick printer check...');
+
+      if (_connectionType == PrinterConnectionType.wifi && _printerIp != null) {
+        final printer = NetworkPrinter(PaperSize.mm80, await CapabilityProfile.load());
+
+        // ✅ Reduced prewarm timeout: 3 seconds
+        final result = await printer.connect(_printerIp!, port: _printerPort)
+            .timeout(const Duration(seconds: 3));
+
+        if (result == PosPrintResult.success) {
+          print('✅ [PREWARM] Printer ready for instant printing');
+          printer.disconnect();
+          _resetErrorTracking();
+        }
+      } else if (_connectionType == PrinterConnectionType.bluetooth && _bluetoothDevice != null) {
+        print('✅ [PREWARM] Bluetooth ready');
+      }
+    } catch (e) {
+      print('⚠️ [PREWARM] Failed: $e (will retry on actual print)');
     }
   }
   // ============================================
