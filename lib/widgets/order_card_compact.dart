@@ -71,13 +71,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -92,7 +85,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.only(left: 20, top: 20, right: 20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: widget.isExpanded
@@ -326,118 +318,9 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
 
           const SizedBox(height: 8),
 
-          // if (widget.showTimer && !widget.isExpanded) ...[
-    // if (widget.showTimer) ...[
-    //         const SizedBox(height: 12),
-    //         Container(
-    //           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-    //           decoration: BoxDecoration(
-    //             color: _badgeColor,
-    //             borderRadius: BorderRadius.circular(8),
-    //             border: Border.all(
-    //               color: _cardColor.withOpacity(0.3),
-    //               width: 1,
-    //             ),
-    //           ),
-    //           child: Row(
-    //             mainAxisAlignment: MainAxisAlignment.center,
-    //             children: [
-    //               Icon(
-    //                 Icons.access_time,
-    //                 color: _cardColor,
-    //                 size: 16,
-    //               ),
-    //               const SizedBox(width: 6),
-    //               Text(
-    //                 'waktu pesanan ${widget.order.remainingText()}',
-    //                 style: TextStyle(
-    //                   color: _cardColor,
-    //                   fontSize: 13,
-    //                   fontWeight: FontWeight.w600,
-    //                 ),
-    //               ),
-    //             ],
-    //           ),
-    //         ),
-    //       ],
-
           if (!widget.order.service.contains('Reservation')) ...[
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: Colors.grey.shade300,
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        widget.order.source == 'App' ? Icons.phone_android :
-                        widget.order.source == 'Web' ? Icons.language :
-                        Icons.point_of_sale,
-                        size: 12,
-                        color: Colors.grey.shade600,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        widget.order.source,
-                        style: TextStyle(
-                          color: Colors.grey.shade700,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: widget.order.paymentMethod == 'Cash'
-                        ? Colors.green.shade50
-                        : Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: widget.order.paymentMethod == 'Cash'
-                          ? Colors.green.shade300
-                          : Colors.blue.shade300,
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        widget.order.paymentMethod == 'Cash'
-                            ? Icons.payments
-                            : Icons.credit_card,
-                        size: 12,
-                        color: widget.order.paymentMethod == 'Cash'
-                            ? Colors.green.shade700
-                            : Colors.blue.shade700,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        widget.order.paymentMethod,
-                        style: TextStyle(
-                          color: widget.order.paymentMethod == 'Cash'
-                              ? Colors.green.shade900
-                              : Colors.blue.shade900,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
@@ -472,38 +355,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
               ],
             ),
           ],
-
-          // SizedBox(
-          //   width: double.infinity,
-          //   height: 44,
-          //   child: OutlinedButton(
-          //     onPressed: widget.onToggleExpand,
-          //     style: OutlinedButton.styleFrom(
-          //       foregroundColor: brandColor,
-          //       side: BorderSide(color: brandColor.withOpacity(0.3)),
-          //       shape: RoundedRectangleBorder(
-          //         borderRadius: BorderRadius.circular(8),
-          //       ),
-          //     ),
-          //     child: Row(
-          //       mainAxisAlignment: MainAxisAlignment.center,
-          //       children: [
-          //         Text(
-          //           widget.isExpanded ? 'Tutup Detail' : 'Lihat Detail',
-          //           style: const TextStyle(
-          //             fontSize: 15,
-          //             fontWeight: FontWeight.w600,
-          //           ),
-          //         ),
-          //         const SizedBox(width: 8),
-          //         Icon(
-          //           widget.isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-          //           size: 20,
-          //         ),
-          //       ],
-          //     ),
-          //   ),
-          // ),
         ],
       ),
     );
@@ -511,9 +362,8 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
 
   Widget _buildExpandedContent() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.only(top: 20),
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12))
       ),
       child: Column(
@@ -522,33 +372,7 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
           Divider(color: Colors.grey.shade200, height: 1),
           const SizedBox(height: 8),
 
-          Row(
-            children: [
-              Icon(
-                Icons.restaurant_menu,
-                color: brandColor,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'Detail Pesanan',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
           Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
             child: Column(
               children: widget.order.items.asMap().entries.map((entry) {
                 final index = entry.key;
@@ -853,18 +677,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                   ),
                 ],
               ),
-            ),
-
-            const SizedBox(height: 16),
-
-            Row(
-              children: [
-                Expanded(child: _buildTimeButton('+5 menit', 5)),
-                const SizedBox(width: 8),
-                Expanded(child: _buildTimeButton('+10 menit', 10)),
-                const SizedBox(width: 8),
-                Expanded(child: _buildTimeButton('+15 menit', 15)),
-              ],
             ),
 
             const SizedBox(height: 16),
