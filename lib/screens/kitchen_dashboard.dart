@@ -1,17 +1,16 @@
-// screens/kitchen_dashboard.dart
-import 'package:baraja_kitchen/services/stockmenu_service.dart';
-import 'package:baraja_kitchen/widgets/table_stockmenu.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
 import '../models/order.dart';
 import '../models/stock_menu.dart';
+import '../services/stockmenu_service.dart';
 import '../services/order_service.dart';
 import '../services/socket_service.dart';
 import '../services/notification_service.dart';
 import '../services/thermal_print_service.dart';
 import '../widgets/order_card_compact.dart';
+import '../widgets/table_stockmenu.dart';
 import 'package:flutter/foundation.dart';
 import 'batch_cooking_screen.dart';
 
@@ -25,7 +24,7 @@ class KitchenDashboard extends StatefulWidget {
 class _KitchenDashboardState extends State<KitchenDashboard> {
   static const Color brandColor = Color(0xFF077A4B);
 
-  List<Order> queue = [];
+  // List<Order> queue = []; // Dihapus karena redundan, menggunakan 'preparing' sebagai gantinya
   List<Order> preparing = [];
   List<Order> done = [];
   List<Order> reservations = [];
@@ -71,9 +70,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
         stockmenu = data;
         _isLoading = false;
       });
-
-      // ✅ Auto select first order after initial load
-      autoSelectFirstOrder();
     } catch (e) {
       print('Error loading stock menu: $e');
       setState(() {
@@ -97,14 +93,14 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   }
 
   void _checkForLateOrders() {
-    for (var order in queue) {
+    for (var order in preparing) {
       if (order.isLate) {
         final alreadyPlayed = _alertPlayedMap[order.orderId] ?? false;
         if (!alreadyPlayed) {
           _alertPlayedMap[order.orderId ?? ""] = true;
+          // Di sini bisa ditambahkan logika untuk notifikasi atau perubahan UI jika order terlambat
         }
       }
-<<<<<<< Updated upstream
     }
   }
 
@@ -141,11 +137,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     try {
       final orderService = await OrderService.refreshOrders();
       await _mergeOrdersWithAlertState(orderService);
-=======
-
-      // ✅ Keep selection or auto-select if needed
-      maintainOrAutoSelectOrder();
->>>>>>> Stashed changes
     } catch (e) {
       if (kDebugMode) {
         print('Error refreshing orders: $e');
@@ -153,121 +144,11 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     }
   }
 
-<<<<<<< Updated upstream
   Future<void> _mergeOrdersWithAlertState(
-    Map<String, List<Order>> ordersMap, {
-    bool isInitialLoad = false,
-  }) async {
-    final newQueue = ordersMap['pending'] ?? [];
-=======
-  Future<void> loadStockMenu() async {
-    setState(() => isLoading = true);
-    try {
-      final data = await StockMenuService.getMenusByCategoryAndWorkstation('', workstation);
-      setState(() {
-        stockmenu = data.menus;
-        isLoading = false;
-      });
-    } catch (e) {
-      setState(() => isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> loadCategories() async {
-    try {
-      final data = await StockMenuService.getCategoriesByWorkstation(workstation);
-      setState(() {
-        categories = data;
-      });
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error loading categories: $e');
-      }
-    }
-  }
-
-  Future<void> loadOutOfStockItems() async {
-    try {
-      final items = await StockMenuService.getOutOfStockItems(workstation);
-      if (mounted) {
-        setState(() {
-          outOfStockItems = items;
-        });
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error loading out of stock items: $e');
-      }
-    }
-  }
-
-  // ✅ NEW: Auto select first order based on current tab
-  void autoSelectFirstOrder() {
-    if (mounted) {
-      setState(() {
-        final currentOrders = getCurrentTabOrders();
-        if (currentOrders.isNotEmpty) {
-          selectedOrder = currentOrders.first;
-          showDetailPanel = true;
-        } else {
-          selectedOrder = null;
-          showDetailPanel = false;
-        }
-      });
-    }
-  }
-
-  // ✅ NEW: Maintain selection or auto-select if needed
-  void maintainOrAutoSelectOrder() {
-    if (mounted) {
-      setState(() {
-        final currentOrders = getCurrentTabOrders();
-
-        // If no order selected, auto-select first
-        if (selectedOrder == null && currentOrders.isNotEmpty) {
-          selectedOrder = currentOrders.first;
-          showDetailPanel = true;
-        }
-        // If selected order no longer exists, select first available
-        else if (selectedOrder != null &&
-            !currentOrders.any((o) => o.orderId == selectedOrder!.orderId)) {
-          if (currentOrders.isNotEmpty) {
-            selectedOrder = currentOrders.first;
-            showDetailPanel = true;
-          } else {
-            selectedOrder = null;
-            showDetailPanel = false;
-          }
-        }
-      });
-    }
-  }
-
-  // ✅ NEW: Get orders based on current tab
-  List<Order> getCurrentTabOrders() {
-    switch (selectedTabIndex) {
-      case 0: // Preparing
-        return preparing;
-      case 2: // Done
-        return done;
-      case 3: // Reservations
-        return reservations;
-      default:
-        return [];
-    }
-  }
-
-  Future<void> mergeOrdersWithAlertState(
       Map<String, List<Order>> ordersMap, {
         bool isInitialLoad = false,
       }) async {
-    final newWaiting = ordersMap['waiting'] ?? [];
->>>>>>> Stashed changes
+    final newQueue = ordersMap['pending'] ?? [];
     final newPreparing = ordersMap['preparing'] ?? [];
     final newDone = ordersMap['completed'] ?? [];
     final newReservations = ordersMap['reservations'] ?? [];
@@ -290,160 +171,88 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       for (var order in allPreparing) {
         if (order.orderId == null) continue;
 
-        // Check apakah order sudah pernah diproses
         final isNewOrder = !_existingOrderIds.contains(order.orderId);
         final movedFromReservation =
             currentReservationIds.contains(order.orderId) &&
-            order.service.contains('Reservation');
-
-        // if (kDebugMode) {
-        //   print('🔍 Checking order: ${order.orderId}');
-        //   print('   isNewOrder: $isNewOrder');
-        //   print('   movedFromReservation: $movedFromReservation');
-        //   print('   _existingOrderIds.contains: ${_existingOrderIds.contains(order.orderId)}');
-        //   print('   Total _existingOrderIds: ${_existingOrderIds.length}');
-        //   if (isNewOrder) {
-        //     print('   _existingOrderIds: $_existingOrderIds');
-        //   }
-        // }
+                order.service.contains('Reservation');
 
         if (isNewOrder || movedFromReservation) {
-          // if (kDebugMode) {
-          //   print('✅ Order baru di Penyiapan: ${order.orderId}');
-          // }
-
-          // CRITICAL: Tambahkan ke _existingOrderIds SEGERA (synchronous)
-          // Ini mencegah race condition dari multiple refresh cycles
           _existingOrderIds.add(order.orderId!);
 
-          // if (kDebugMode) {
-          //   print('➕ Added ${order.orderId} to _existingOrderIds IMMEDIATELY');
-          //   print('   _existingOrderIds.contains now: ${_existingOrderIds.contains(order.orderId)}');
-          // }
-
-          // Play notification (async, tapi tidak blocking untuk add to set)
           _notificationService
               .playNewOrderNotification(
-                order.orderId!,
-                soundPath: 'sounds/alert.mp3',
-              )
+            order.orderId!,
+            soundPath: 'sounds/alert.mp3',
+          )
               .catchError((e) {
-            return false; // Tambahkan ini
-              });
+            return false;
+          });
 
-          // Auto print (non-blocking)
           if (_autoPrintEnabled && _printService.isConfigured) {
             final alreadyPrinted = _printService.isAlreadyPrinted(
               order.orderId,
             );
 
-            // if (kDebugMode) {
-            //   print('🖨️ Print check for ${order.orderId}:');
-            //   print('   _autoPrintEnabled: $_autoPrintEnabled');
-            //   print('   isConfigured: ${_printService.isConfigured}');
-            //   print('   isAlreadyPrinted: $alreadyPrinted');
-            // }
-
             if (!alreadyPrinted) {
-              // if (kDebugMode) {
-              //   print('🖨️ Starting auto print for ${order.orderId}');
-              // }
-
-              // Fire and forget - jangan await untuk mencegah blocking
               _printService
                   .autoPrintOrder(order)
                   .then((printed) {
-                    // if (kDebugMode) {
-                    //   print(printed
-                    //       ? '✅ Print success for ${order.orderId}'
-                    //       : '❌ Print failed for ${order.orderId}');
-                    // }
-
-                    if (printed && mounted) {
-                      _showPrintSuccessSnackbar(order.orderId!);
-                    }
-                  })
+                if (printed && mounted) {
+                  _showPrintSuccessSnackbar(order.orderId!);
+                }
+              })
                   .catchError((e) {
-                    if (kDebugMode) {
-                      // print('❌ Print error for ${order.orderId}: $e');
-                    }
-                  });
-            } else if (kDebugMode) {
-              // print('⏭️ Skip print - already printed: ${order.orderId}');
+                if (kDebugMode) {
+                  print('❌ Print error for ${order.orderId}: $e');
+                }
+              });
             }
-          } else if (kDebugMode) {
-            // print('⏭️ Skip print for ${order.orderId}:');
-            // print('   _autoPrintEnabled: $_autoPrintEnabled');
-            // print('   isConfigured: ${_printService.isConfigured}');
           }
-        } else if (kDebugMode && _existingOrderIds.length < 20) {
-          // print('⏭️ Skip order ${order.orderId} - already processed');
         }
       }
 
-      // Process new reservations
       for (var order in newReservations) {
         if (order.orderId != null &&
             !_existingOrderIds.contains(order.orderId)) {
-          if (kDebugMode) {
-            // print('📅 Reservasi baru: ${order.orderId}');
-          }
-
-          // Add immediately
           _existingOrderIds.add(order.orderId!);
 
-          // Play notification (non-blocking)
           _notificationService
               .playNewOrderNotification(
-                order.orderId!,
-                soundPath: 'sounds/ding.mp3',
-              )
+            order.orderId!,
+            soundPath: 'sounds/ding.mp3',
+          )
               .catchError((e) {
-            return false; // Tambahkan ini
-              });
+            return false;
+          });
         }
       }
     } else {
-      // Initial load: add all orders to existing set
-      if (kDebugMode) {
-        // print('📋 Initial load - adding all orders to _existingOrderIds');
-      }
-
       for (var order in [...allPreparing, ...newDone, ...newReservations]) {
         if (order.orderId != null) {
           _existingOrderIds.add(order.orderId!);
         }
       }
-
-      if (kDebugMode) {
-        // print(
-        //   '📋 Total orders in _existingOrderIds: ${_existingOrderIds.length}',
-        // );
-      }
     }
 
-    // Initialize alert played map
     for (var o in allPreparing) {
       _alertPlayedMap.putIfAbsent(o.orderId ?? "", () => false);
     }
 
-    // Sort orders
     allPreparing.sort(
-      (a, b) =>
+          (a, b) =>
           (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
     );
     newDone.sort(
-      (a, b) =>
+          (a, b) =>
           (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
     );
     newReservations.sort(
-      (a, b) =>
+          (a, b) =>
           (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)),
     );
 
     if (mounted) {
       setState(() {
-        queue = [];
         preparing = allPreparing;
         done = newDone;
         reservations = newReservations;
@@ -451,360 +260,26 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     }
   }
 
-<<<<<<< Updated upstream
   void _showPrintSuccessSnackbar(String orderId) {
     if (kDebugMode) {
-      // print('✅ [AUTO PRINT] Order $orderId berhasil diprint otomatis');
-=======
-  Future<void> confirmOrdersInBackground(List<Order> ordersToConfirm) async {
-    // Run all confirmations in parallel
-    final confirmFutures = ordersToConfirm.map((order) async {
-      try {
-        if (kDebugMode) {
-          print('🚀 Auto-confirming ${order.orderType ?? 'order'} ${order.orderId}');
-        }
-
-        final updated = await OrderService.updateOrderStatus(
-          order.orderId!,
-          'OnProcess',
-        );
-
-        if (updated) {
-          if (kDebugMode) {
-            print('✅ Order ${order.orderId} confirmed');
-          }
-        } else {
-          if (kDebugMode) {
-            print('⚠️ Failed to confirm: ${order.orderId}');
-          }
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print('❌ Error confirming ${order.orderId}: $e');
-        }
-      }
-    });
-
-    // Wait for all confirmations (but don't block the UI/print)
-    await Future.wait(confirmFutures);
-  }
-
-  void processPrintQueue(List<Order> allPreparing) async {
-    for (var order in allPreparing) {
-      if (order.orderId == null) continue;
-
-      // Check for new items
-      final newItems = <OrderItem>[];
-
-      for (final item in order.items) {
-        if (!displayedItemIds.contains(item.itemId)) {
-          newItems.add(item);
-          displayedItemIds.add(item.itemId);
-
-          if (kDebugMode) {
-            print('🆕 NEW ITEM: ${item.name} (${item.itemId})');
-          }
-        }
-      }
-
-      // Print new items immediately
-      if (newItems.isNotEmpty && autoPrintEnabled && printService.isConfigured) {
-        await autoPrintNewItems(order, newItems);
-      }
-    }
-  }
-
-  Future<void> autoPrintNewItems(Order order, List<OrderItem> newItems) async {
-    if (kDebugMode) {
-      print('🖨️ Attempting to print ${newItems.length} new items from ${order.orderId}');
-    }
-
-    // Play notification
-    notificationService.playNewOrderNotification(
-      order.orderId!,
-      soundPath: 'sounds/alert.mp3',
-    ).catchError((e) => false);
-
-    // Detect open bill
-    final isOpenBill = order.items.length > newItems.length;
-
-    // Create temp order for printing
-    final tempOrderForPrint = Order(
-      orderId: order.orderId,
-      name: order.name,
-      table: order.table,
-      status: order.status,
-      items: newItems,
-      createdAt: order.createdAt,
-      updatedAt: order.updatedAt,
-      createdAtWIB: order.createdAtWIB,
-      updatedAtWIB: order.updatedAtWIB,
-      service: order.service,
-      orderType: order.orderType,
-      reservationDateTime: order.reservationDateTime,
-      totalPrice: order.totalPrice,
-      source: order.source,
-      paymentMethod: order.paymentMethod,
-    );
-
-    // ✅ Print with isOpenBill flag
-    printService.autoPrintOrder(tempOrderForPrint, isOpenBill: isOpenBill).then((printed) {
-      if (printed && mounted) {
-        showPrintSuccessSnackbar(order.orderId!);
-      }
-    }).catchError((e) {
-      if (kDebugMode) {
-        print('❌ Print error: $e');
-      }
-    });
-  }
-
-  Future<void> processNewReservations(List<Order> newReservations) async {
-    for (var order in newReservations) {
-      if (order.orderId != null && !OrderService.shouldMoveReservationToPreparation(order)) {
-        // Track items from reservation
-        for (final item in order.items) {
-          if (!displayedItemIds.contains(item.itemId)) {
-            displayedItemIds.add(item.itemId);
-          }
-        }
-
-        notificationService.playNewOrderNotification(
-          order.orderId!,
-          soundPath: 'sounds/ding.mp3',
-        ).catchError((e) => false);
-      }
-    }
-  }
-
-  void trackExistingItems(List<Order> orders) {
-    for (var order in orders) {
-      for (final item in order.items) {
-        displayedItemIds.add(item.itemId);
-      }
-    }
-
-    if (kDebugMode) {
-      print('📋 Initial load: Tracked ${displayedItemIds.length} existing items');
-    }
-  }
-
-  void completeOrder(Order order) async {
-    setState(() {
-      preparing.remove(order);
-      done.add(order);
-      if (selectedOrder?.orderId == order.orderId) {
-        selectedOrder = null;
-        showDetailPanel = false;
-      }
-    });
-
-    if (order.orderId != null) {
-      await OrderService.updateOrderStatus(order.orderId!, 'Completed');
-    }
-    showOrderCompleteDialog(order);
-
-    // ✅ Auto select next order after completion
-    autoSelectFirstOrder();
-  }
-
-  void completeBatchOrders(List<String> orderIds) async {
-    for (var orderId in orderIds) {
-      final order = preparing.firstWhere(
-            (o) => o.orderId == orderId,
-        orElse: () => preparing.first,
-      );
-
-      setState(() {
-        preparing.remove(order);
-        done.add(order);
-      });
-
-      await OrderService.updateOrderStatus(orderId, 'Completed');
-    }
-
-    setState(() {
-      if (selectedOrder != null && orderIds.contains(selectedOrder!.orderId)) {
-        selectedOrder = null;
-        showDetailPanel = false;
-      }
-    });
-
-    showBatchCompleteDialog(orderIds.length);
-  }
-
-  void addTimeToOrder(Order order, int minutes) {
-    setState(() {
-      if (order.updatedAt != null) {
-        order.updatedAt = order.updatedAt!.add(Duration(minutes: minutes));
-      }
-    });
-  }
-
-  void checkForLateOrders() {
-    for (var order in queue) {
-      if (order.isLate) {
-        final alreadyPlayed = alertPlayedMap[order.orderId] ?? false;
-        if (!alreadyPlayed) {
-          alertPlayedMap[order.orderId ?? ""] = true;
-        }
-      }
-    }
-  }
-
-  List<Order> getFilteredOrders(List<Order> orders) {
-    if (search.isEmpty) return orders;
-
-    return orders.where((order) {
-      final nameMatch = order.name.toLowerCase().contains(search);
-      final itemsMatch = order.items.any((item) => item.name.toLowerCase().contains(search));
-      return nameMatch || itemsMatch;
-    }).toList();
-  }
-
-  Map<String, List<BatchItem>> groupIdenticalItemsForCount() {
-    final Map<String, List<BatchItem>> grouped = {};
-
-    for (var order in preparing) {
-      for (var item in order.items) {
-        final addonsKey = item.addons?.map((a) => a['name']).join(',') ?? '';
-        final toppingsKey = item.toppings?.map((t) => t['name']).join(',') ?? '';
-        final notesKey = item.notes ?? '';
-        final key = '${item.name}|$addonsKey|$toppingsKey|$notesKey';
-
-        if (!grouped.containsKey(key)) {
-          grouped[key] = [];
-        }
-
-        grouped[key]!.add(BatchItem(
-          orderId: order.orderId ?? '',
-          orderName: order.name,
-          tableNumber: order.table,
-          menuName: item.name,
-          quantity: item.qty,
-          addons: item.addons,
-          toppings: item.toppings,
-          notes: item.notes,
-        ));
-      }
-    }
-
-    return Map.fromEntries(
-      grouped.entries.where((entry) {
-        final totalQty = entry.value.fold(0, (sum, item) => sum + item.quantity);
-        return totalQty >= 2;
-      }),
-    );
-  }
-
-  void debugPrintStatus(Order order) {
-    print('┌────────────────────────────────────┐');
-    print('📊 DEBUG: Order ${order.orderId}');
-    print('└────────────────────────────────────┘');
-    print('Total items: ${order.items.length}');
-    for (final item in order.items) {
-      final isPrinted = printService.isItemAlreadyPrinted(item.itemId);
-      print('  ${isPrinted ? "✅" : "❌"} ${item.name} (${item.itemId})');
-    }
-  }
-
-  void handleBeverageOrder(Map<String, dynamic> beverageData) {
-    notificationService.playNewOrderNotification(
-      beverageData['orderId'] ?? 'unknown',
-      soundPath: 'sounds/alert.mp3',
-    ).catchError((e) => false);
-  }
-
-  Future<void> refreshOutOfStockAfterUpdate(String menuItemId) async {
-    try {
-      final updatedItems = await StockMenuService.getOutOfStockItems(workstation);
-
-      if (mounted) {
-        setState(() {
-          outOfStockItems = updatedItems;
-        });
-
-        if (updatedItems.isEmpty && Navigator.canPop(context)) {
-          Navigator.pop(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.white),
-                  SizedBox(width: 8),
-                  Text('Semua stok berhasil diperbarui!'),
-                ],
-              ),
-              backgroundColor: Color(0xFF077A4B),
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error refreshing out of stock: $e');
-      }
-    }
-  }
-
-  void showOutOfStockDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (context) => OutOfStockDialog(
-        outOfStockItems: outOfStockItems,
-        workstation: workstation,
-        brandColor: brandColor,
-        onRefresh: () async {
-          await loadOutOfStockItems();
-
-          if (mounted && Navigator.canPop(context)) {
-            Navigator.pop(context);
-            if (outOfStockItems.isNotEmpty) {
-              showOutOfStockDialog();
-            }
-          }
-        },
-      ),
-    );
-  }
-
-  void showPrinterSettings() {
-    showDialog(
-      context: context,
-      builder: (context) => PrinterSettingsDialog(
-        printService: printService,
-        autoPrintEnabled: autoPrintEnabled,
-        onAutoPrintChanged: (value) {
-          setState(() {
-            autoPrintEnabled = value;
-          });
-        },
-        brandColor: brandColor,
-      ),
-    );
-  }
-
-  void showPrintSuccessSnackbar(String orderId) {
-    if (kDebugMode) {
       print('✅ [AUTO PRINT] Order $orderId berhasil diprint otomatis');
->>>>>>> Stashed changes
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.print, color: Colors.white),
-            const SizedBox(width: 8),
-            Text('Order $orderId berhasil diprint'),
-          ],
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.print, color: Colors.white),
+              const SizedBox(width: 8),
+              Text('Order $orderId berhasil diprint'),
+            ],
+          ),
+          backgroundColor: brandColor,
+          duration: const Duration(seconds: 2),
         ),
-        backgroundColor: brandColor,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+      );
+    }
   }
 
   void _completeOrder(Order order) async {
@@ -822,7 +297,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   void _completeBatchOrders(List<String> orderIds) async {
     for (var orderId in orderIds) {
       final order = preparing.firstWhere(
-        (o) => o.orderId == orderId,
+            (o) => o.orderId == orderId,
         orElse: () => preparing.first,
       );
 
@@ -842,30 +317,30 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       context: context,
       builder:
           (_) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: brandColor, size: 28),
+            const SizedBox(width: 12),
+            const Text('Pesanan Selesai'),
+          ],
+        ),
+        content: Text(
+          '${order.name} (Meja ${order.table}) selesai dalam ${order.totalCookTime()}',
+          style: const TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            child: const Text(
+              'OK',
+              style: TextStyle(fontSize: 16, color: brandColor),
             ),
-            title: Row(
-              children: [
-                Icon(Icons.check_circle, color: brandColor, size: 28),
-                const SizedBox(width: 12),
-                const Text('Pesanan Selesai'),
-              ],
-            ),
-            content: Text(
-              '${order.name} (Meja ${order.table}) selesai dalam ${order.totalCookTime()}',
-              style: const TextStyle(fontSize: 16),
-            ),
-            actions: [
-              TextButton(
-                child: const Text(
-                  'OK',
-                  style: TextStyle(fontSize: 16, color: brandColor),
-                ),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
+            onPressed: () => Navigator.of(context).pop(),
           ),
+        ],
+      ),
     );
   }
 
@@ -874,30 +349,30 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       context: context,
       builder:
           (_) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.check_circle, color: brandColor, size: 28),
+            const SizedBox(width: 12),
+            const Text('Batch Selesai'),
+          ],
+        ),
+        content: Text(
+          '$count pesanan berhasil diselesaikan secara batch!',
+          style: const TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            child: const Text(
+              'OK',
+              style: TextStyle(fontSize: 16, color: brandColor),
             ),
-            title: Row(
-              children: [
-                Icon(Icons.check_circle, color: brandColor, size: 28),
-                const SizedBox(width: 12),
-                const Text('Batch Selesai'),
-              ],
-            ),
-            content: Text(
-              '$count pesanan berhasil diselesaikan secara batch!',
-              style: const TextStyle(fontSize: 16),
-            ),
-            actions: [
-              TextButton(
-                child: const Text(
-                  'OK',
-                  style: TextStyle(fontSize: 16, color: brandColor),
-                ),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
+            onPressed: () => Navigator.of(context).pop(),
           ),
+        ],
+      ),
     );
   }
 
@@ -906,15 +381,15 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       context: context,
       builder:
           (context) => _PrinterSettingsDialog(
-            printService: _printService,
-            autoPrintEnabled: _autoPrintEnabled,
-            onAutoPrintChanged: (value) {
-              setState(() {
-                _autoPrintEnabled = value;
-              });
-            },
-            brandColor: brandColor,
-          ),
+        printService: _printService,
+        autoPrintEnabled: _autoPrintEnabled,
+        onAutoPrintChanged: (value) {
+          setState(() {
+            _autoPrintEnabled = value;
+          });
+        },
+        brandColor: brandColor,
+      ),
     );
   }
 
@@ -1025,7 +500,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     return orders.where((order) {
       final nameMatch = order.name.toLowerCase().contains(search);
       final itemsMatch = order.items.any(
-        (item) => item.name.toLowerCase().contains(search),
+            (item) => item.name.toLowerCase().contains(search),
       );
       return nameMatch || itemsMatch;
     }).toList();
@@ -1066,61 +541,58 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
             spacing: 16,
             runSpacing: 16,
             children:
-                filteredOrders.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final order = entry.value;
-                  final isExpanded = _expandedOrders[order.orderId] ?? false;
+            filteredOrders.asMap().entries.map((entry) {
+              final index = entry.key;
+              final order = entry.value;
+              final isExpanded = _expandedOrders[order.orderId] ?? false;
 
-                  return SizedBox(
-                    width: cardWidth,
-                    child: OrderCardCompact(
-                      order: order,
-                      isExpanded: isExpanded,
-                      showTimer: showTimer,
-                      isFinished: isFinished,
-                      queueNumber: showTimer && !isFinished ? index + 1 : null,
-                      onToggleExpand: () {
-                        setState(() {
-                          _expandedOrders[order.orderId ?? ''] = !isExpanded;
-                        });
-                      },
-                      onComplete:
-                          showTimer && !isFinished
-                              ? () => _completeOrder(order)
-                              : null,
-                      onAddTime: showTimer ? _addTimeToOrder : null,
-                      onReprint: () async {
-                        print(
-                          'Attempting to reprint order ${order.orderId}',
-                        ); // Log manual print attempt
-                        final success = await _printService.manualPrint(order);
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Row(
-                                children: [
-                                  Icon(
-                                    success ? Icons.check_circle : Icons.error,
-                                    color: Colors.white,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    success
-                                        ? 'Berhasil print ulang'
-                                        : 'Gagal print, cek koneksi printer',
-                                  ),
-                                ],
+              return SizedBox(
+                width: cardWidth,
+                child: OrderCardCompact(
+                  order: order,
+                  isExpanded: isExpanded,
+                  showTimer: showTimer,
+                  isFinished: isFinished,
+                  queueNumber: showTimer && !isFinished ? index + 1 : null,
+                  onToggleExpand: () {
+                    setState(() {
+                      _expandedOrders[order.orderId ?? ''] = !isExpanded;
+                    });
+                  },
+                  onComplete:
+                  showTimer && !isFinished
+                      ? () => _completeOrder(order)
+                      : null,
+                  onAddTime: showTimer ? _addTimeToOrder : null,
+                  onReprint: () async {
+                    final success = await _printService.manualPrint(order);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              Icon(
+                                success ? Icons.check_circle : Icons.error,
+                                color: Colors.white,
                               ),
-                              backgroundColor:
-                                  success ? brandColor : Colors.red,
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
-                        }
-                      },
-                    ),
-                  );
-                }).toList(),
+                              const SizedBox(width: 8),
+                              Text(
+                                success
+                                    ? 'Berhasil print ulang'
+                                    : 'Gagal print, cek koneksi printer',
+                              ),
+                            ],
+                          ),
+                          backgroundColor:
+                          success ? brandColor : Colors.red,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+                ),
+              );
+            }).toList(),
           ),
         );
       },
@@ -1244,348 +716,277 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       grouped.entries.where((entry) {
         final totalQty = entry.value.fold(
           0,
-          (sum, item) => sum + item.quantity,
+              (sum, item) => sum + item.quantity,
         );
         return totalQty >= 2;
       }),
     );
   }
 
+  // --- Refactored UI Methods ---
+
+  /// Membangun AppBar untuk dashboard
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      elevation: 1,
+      toolbarHeight: 70,
+      backgroundColor: Colors.white,
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: brandColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            // PERBAIKAN: Path aset harus relatif terhadap folder 'assets'
+            // Pastikan untuk menambahkan aset ke pubspec.yaml Anda
+            child: Image.asset(
+              'assets/images/Logo.jpg',
+              height: 32,
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(
+                  Icons.restaurant,
+                  color: Colors.white,
+                  size: 32,
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Baraja Kitchen',
+              style: TextStyle(
+                color: Colors.black87,
+                fontWeight: FontWeight.w600,
+                fontSize: 20,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (_printService.isConfigured)
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 6,
+              ),
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color:
+                _autoPrintEnabled
+                    ? Colors.green.shade50
+                    : Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color:
+                  _autoPrintEnabled
+                      ? Colors.green.shade300
+                      : Colors.orange.shade300,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _printService.connectionType == PrinterConnectionType.wifi
+                        ? Icons.wifi
+                        : Icons.bluetooth,
+                    size: 14,
+                    color:
+                    _autoPrintEnabled
+                        ? Colors.green.shade700
+                        : Colors.orange.shade700,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _autoPrintEnabled ? 'Auto' : 'Manual',
+                    style: TextStyle(
+                      color:
+                      _autoPrintEnabled
+                          ? Colors.green.shade900
+                          : Colors.orange.shade900,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (_notificationService.queueLength > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 6,
+              ),
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade400,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.red.withOpacity(0.2),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.notifications_active,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${_notificationService.queueLength}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Container(
+            decoration: BoxDecoration(
+              color: brandColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.print, color: brandColor, size: 24),
+              onPressed: _showPrinterSettings,
+              tooltip: 'Pengaturan Printer',
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: brandColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.refresh, color: brandColor, size: 24),
+              onPressed: _isLoading ? null : _loadOrders,
+              tooltip: 'Refresh',
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: brandColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.access_time, color: brandColor, size: 18),
+                const SizedBox(width: 6),
+                Text(
+                  DateFormat('HH:mm:ss').format(_currentTime),
+                  style: const TextStyle(
+                    color: brandColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(70),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          color: Colors.white,
+          child: TextField(
+            onChanged:
+                (value) => setState(() => search = value.toLowerCase()),
+            style: const TextStyle(fontSize: 15),
+            decoration: InputDecoration(
+              hintText: 'Cari produk...',
+              hintStyle: TextStyle(color: Colors.grey.shade400),
+              prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
+              suffixIcon:
+              search.isNotEmpty
+                  ? IconButton(
+                icon: Icon(Icons.clear, color: Colors.grey.shade600),
+                onPressed: () => setState(() => search = ''),
+              )
+                  : null,
+              filled: true,
+              fillColor: Colors.grey.shade50,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 16,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: brandColor, width: 1.5),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Membangun body utama yang berisi sidebar dan konten
+  Widget _buildBody() {
+    return Row(
+      children: [
+        _buildSidebar(),
+        Expanded(
+          child: Container(
+            color: const Color(0xFFF9FAFB),
+            child: IndexedStack(
+              index: _selectedTabIndex,
+              children: [
+                _buildOrdersList(preparing, true, false),
+                BatchCookingView(
+                  orders: preparing,
+                  onBatchComplete: _completeBatchOrders,
+                ),
+                _buildOrdersList(done, false, true),
+                _buildOrdersList(reservations, false, false),
+                TableStockmenu(
+                  stockMenu: stockmenu,
+                  onRefresh: _loadStockMenu,
+                  brandColor: brandColor,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-<<<<<<< Updated upstream
-      appBar: AppBar(
-        elevation: 1,
-        toolbarHeight: 70,
-        backgroundColor: Colors.white,
-        title: Row(
-          children: [
-=======
-      appBar: KitchenDashboardWidgets.buildAppBar(
-        context: context,
-        barType: widget.barType,
-        currentTime: currentTime,
-        printService: printService,
-        autoPrintEnabled: autoPrintEnabled,
-        notificationService: notificationService,
-        outOfStockItems: outOfStockItems,
-        isLoading: isLoading,
-        onPrinterSettings: showPrinterSettings,
-        onOutOfStockDialog: showOutOfStockDialog,
-        onRefresh: loadOrders,
-      ),
-      body: isLoading
-          ? KitchenDashboardWidgets.buildLoadingWidget(brandColor)
-          : errorMessage != null
-          ? KitchenDashboardWidgets.buildErrorWidget(
-        errorMessage: errorMessage,
-        brandColor: brandColor,
-        onRetry: loadOrders,
-      )
-          : Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // LEFT SIDEBAR - Navigation
-          KitchenDashboardWidgets.buildSidebar(
-            selectedTabIndex: selectedTabIndex,
-            preparing: preparing,
-            done: done,
-            reservations: reservations,
-            categories: categories,
-            brandColor: brandColor,
-            onTabSelected: (index) {
-              setState(() {
-                selectedTabIndex = index;
-                selectedOrder = null;
-                showDetailPanel = false;
-
-                if (index == 5) {
-                  navigateToCategories();
-                } else {
-                  // ✅ Auto select first order when switching tabs
-                  autoSelectFirstOrder();
-                }
-              });
-            },
-            groupIdenticalItemsForCount: groupIdenticalItemsForCount,
-          ),
-
-          // CENTER - Order List
-          Expanded(
-            flex: 2,
-            child: Container(
-              color: const Color(0xFFF9FAFB),
-              child: IndexedStack(
-                index: selectedTabIndex,
-                children: [
-                  buildOrderListCenter(preparing),
-                  BatchCookingView(
-                    orders: preparing,
-                    onBatchComplete: completeBatchOrders,
-                  ),
-                  buildOrderListCenter(done),
-                  buildOrderListCenter(reservations),
-                  TableStockmenu(
-                    stockMenu: stockmenu,
-                    onRefresh: loadStockMenu,
-                    brandColor: brandColor,
-                  ),
-                  KitchenDashboardWidgets.buildCategoriesPlaceholder(
-                    brandColor: brandColor,
-                    onNavigate: navigateToCategories,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // RIGHT - Order Detail (shown for certain tabs)
-          if (selectedTabIndex != 1 && selectedTabIndex != 4 && selectedTabIndex != 5)
->>>>>>> Stashed changes
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: brandColor,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Image.asset(
-                'assets/icons/logo.png',
-                height: 32,
-                errorBuilder: (context, error, stackTrace) {
-                  return const Icon(
-                    Icons.restaurant,
-                    color: Colors.white,
-                    size: 32,
-                  );
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Baraja Kitchen',
-                style: TextStyle(
-                  color: Colors.black87,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 20,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (_printService.isConfigured)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                margin: const EdgeInsets.only(right: 8),
-                decoration: BoxDecoration(
-                  color:
-                      _autoPrintEnabled
-                          ? Colors.green.shade50
-                          : Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color:
-                        _autoPrintEnabled
-                            ? Colors.green.shade300
-                            : Colors.orange.shade300,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _printService.connectionType == PrinterConnectionType.wifi
-                          ? Icons.wifi
-                          : Icons.bluetooth,
-                      size: 14,
-                      color:
-                          _autoPrintEnabled
-                              ? Colors.green.shade700
-                              : Colors.orange.shade700,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      _autoPrintEnabled ? 'Auto' : 'Manual',
-                      style: TextStyle(
-                        color:
-                            _autoPrintEnabled
-                                ? Colors.green.shade900
-                                : Colors.orange.shade900,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (_notificationService.queueLength > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                margin: const EdgeInsets.only(right: 12),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade400,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.red.withOpacity(0.2),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.notifications_active,
-                      size: 16,
-                      color: Colors.white,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${_notificationService.queueLength}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            Container(
-              decoration: BoxDecoration(
-                color: brandColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.print, color: brandColor, size: 24),
-                onPressed: _showPrinterSettings,
-                tooltip: 'Pengaturan Printer',
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              decoration: BoxDecoration(
-                color: brandColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.refresh, color: brandColor, size: 24),
-                onPressed: _isLoading ? null : _loadOrders,
-                tooltip: 'Refresh',
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: brandColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.access_time, color: brandColor, size: 18),
-                  const SizedBox(width: 6),
-                  Text(
-                    DateFormat('HH:mm:ss').format(_currentTime),
-                    style: const TextStyle(
-                      color: brandColor,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(70),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            color: Colors.white,
-            child: TextField(
-              onChanged:
-                  (value) => setState(() => search = value.toLowerCase()),
-              style: const TextStyle(fontSize: 15),
-              decoration: InputDecoration(
-                hintText: 'Cari produk...',
-                hintStyle: TextStyle(color: Colors.grey.shade400),
-                prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
-                suffixIcon:
-                    search.isNotEmpty
-                        ? IconButton(
-                          icon: Icon(Icons.clear, color: Colors.grey.shade600),
-                          onPressed: () => setState(() => search = ''),
-                        )
-                        : null,
-                filled: true,
-                fillColor: Colors.grey.shade50,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 16,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey.shade200),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.grey.shade200),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: brandColor, width: 1.5),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-      body:
-          _isLoading
-              ? _buildLoadingWidget()
-              : _errorMessage != null
-              ? _buildErrorWidget()
-              : Row(
-                children: [
-                  _buildSidebar(),
-                  Expanded(
-                    child: Container(
-                      color: const Color(0xFFF9FAFB),
-                      child: IndexedStack(
-                        index: _selectedTabIndex,
-                        children: [
-                          _buildOrdersList(preparing, true, false),
-                          BatchCookingView(
-                            orders: preparing,
-                            onBatchComplete: _completeBatchOrders,
-                          ),
-                          _buildOrdersList(done, false, true),
-                          _buildOrdersList(reservations, false, false),
-                          TableStockmenu(
-                            stockMenu: stockmenu,
-                            onRefresh: _loadStockMenu,
-                            brandColor: brandColor,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+      appBar: _buildAppBar(),
+      body: _isLoading
+          ? _buildLoadingWidget()
+          : _errorMessage != null
+          ? _buildErrorWidget()
+          : _buildBody(),
     );
   }
 }
 
-// ==================== PRINTER SETTINGS DIALOG ====================
 class _PrinterSettingsDialog extends StatefulWidget {
   final ThermalPrintService printService;
   final bool autoPrintEnabled;
@@ -1647,7 +1048,7 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
       setState(() {
         // Gabungkan dengan device yang sudah ada (untuk menghindari duplikat)
         final Set<String> existingAddresses =
-            _bluetoothDevices.map((d) => d.address).toSet();
+        _bluetoothDevices.map((d) => d.address).toSet();
         for (var device in devices) {
           if (!existingAddresses.contains(device.address)) {
             _bluetoothDevices.add(device);
@@ -1659,7 +1060,7 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
       if (devices.isEmpty && _bluetoothDevices.isEmpty) {
         setState(() {
           _errorMessage =
-              'Tidak ada printer yang dipasangkan. Silakan pair printer di pengaturan Bluetooth perangkat terlebih dahulu.';
+          'Tidak ada printer yang dipasangkan. Silakan pair printer di pengaturan Bluetooth perangkat terlebih dahulu.';
         });
       }
     } catch (e) {
@@ -1678,81 +1079,81 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('Input Manual MAC Address'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nama Printer (Opsional)',
-                    hintText: 'Thermal Printer',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: macController,
-                  decoration: const InputDecoration(
-                    labelText: 'MAC Address',
-                    hintText: '00:11:22:33:44:55',
-                    border: OutlineInputBorder(),
-                  ),
-                  textCapitalization: TextCapitalization.characters,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Format: XX:XX:XX:XX:XX:XX\nContoh: 00:11:22:33:44:55',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-              ],
+        title: const Text('Input Manual MAC Address'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Nama Printer (Opsional)',
+                hintText: 'Thermal Printer',
+                border: OutlineInputBorder(),
+              ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Batal'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: macController,
+              decoration: const InputDecoration(
+                labelText: 'MAC Address',
+                hintText: '00:11:22:33:44:55',
+                border: OutlineInputBorder(),
               ),
-              ElevatedButton(
-                onPressed: () {
-                  final mac = macController.text.trim();
-                  final name = nameController.text.trim();
-
-                  if (mac.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('MAC Address tidak boleh kosong'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                    return;
-                  }
-
-                  final device = BluetoothDevice(
-                    address: mac,
-                    name: name.isEmpty ? 'Thermal Printer' : name,
-                  );
-
-                  setState(() {
-                    _selectedDevice = device;
-                    // Cek apakah device sudah ada di list
-                    final exists = _bluetoothDevices.any(
-                      (d) => d.address == device.address,
-                    );
-                    if (!exists) {
-                      _bluetoothDevices.add(device);
-                    }
-                  });
-
-                  Navigator.pop(context);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: widget.brandColor,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Tambah'),
-              ),
-            ],
+              textCapitalization: TextCapitalization.characters,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Format: XX:XX:XX:XX:XX:XX\nContoh: 00:11:22:33:44:55',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
           ),
+          ElevatedButton(
+            onPressed: () {
+              final mac = macController.text.trim();
+              final name = nameController.text.trim();
+
+              if (mac.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('MAC Address tidak boleh kosong'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+
+              final device = BluetoothDevice(
+                address: mac,
+                name: name.isEmpty ? 'Thermal Printer' : name,
+              );
+
+              setState(() {
+                _selectedDevice = device;
+                // Cek apakah device sudah ada di list
+                final exists = _bluetoothDevices.any(
+                      (d) => d.address == device.address,
+                );
+                if (!exists) {
+                  _bluetoothDevices.add(device);
+                }
+              });
+
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: widget.brandColor,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Tambah'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1891,18 +1292,18 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                       child: ElevatedButton.icon(
                         onPressed: _isScanning ? null : _scanBluetoothDevices,
                         icon:
-                            _isScanning
-                                ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white,
-                                    ),
-                                  ),
-                                )
-                                : const Icon(Icons.bluetooth_searching),
+                        _isScanning
+                            ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                            : const Icon(Icons.bluetooth_searching),
                         label: Text(
                           _isScanning ? 'Mencari...' : 'Lihat Paired',
                         ),
@@ -1955,9 +1356,9 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                           leading: Icon(
                             Icons.print_outlined,
                             color:
-                                isSelected
-                                    ? widget.brandColor
-                                    : Colors.grey[600],
+                            isSelected
+                                ? widget.brandColor
+                                : Colors.grey[600],
                           ),
                           title: Text(
                             device.name?.isEmpty ?? true
@@ -1965,9 +1366,9 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                                 : device.name!,
                             style: TextStyle(
                               fontWeight:
-                                  isSelected
-                                      ? FontWeight.w600
-                                      : FontWeight.normal,
+                              isSelected
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
                             ),
                           ),
                           subtitle: Text(
@@ -1975,12 +1376,12 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
                             style: const TextStyle(fontSize: 11),
                           ),
                           trailing:
-                              isSelected
-                                  ? Icon(
-                                    Icons.check_circle,
-                                    color: widget.brandColor,
-                                  )
-                                  : null,
+                          isSelected
+                              ? Icon(
+                            Icons.check_circle,
+                            color: widget.brandColor,
+                          )
+                              : null,
                           selected: isSelected,
                           selectedTileColor: widget.brandColor.withOpacity(0.1),
                           onTap: () {
