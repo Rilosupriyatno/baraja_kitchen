@@ -235,12 +235,12 @@ class StockMenuService {
   }
 
   /// Helper untuk determine stock status
-  static String _determineStockStatus(int stock) {
-    if (stock <= 0) return 'out_of_stock';
-    if (stock <= 5) return 'critical_stock';
-    if (stock <= 10) return 'low_stock';
-    return 'in_stock';
-  }
+  // static String _determineStockStatus(int stock) {
+  //   if (stock <= 0) return 'out_of_stock';
+  //   if (stock <= 5) return 'critical_stock';
+  //   if (stock <= 10) return 'low_stock';
+  //   return 'in_stock';
+  // }
 
   // Get menu items by kategori dan workstation
   static Future<CategoryWithMenus> getMenusByCategoryAndWorkstation(

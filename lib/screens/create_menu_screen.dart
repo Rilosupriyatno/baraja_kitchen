@@ -153,7 +153,7 @@ class _CreateMenuScreenState extends State<CreateMenuScreen> {
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: Text('Pilih Main Category'),
-              content: Container(
+              content: SizedBox(
                 width: double.maxFinite,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -176,7 +176,7 @@ class _CreateMenuScreenState extends State<CreateMenuScreen> {
                       },
                     ),
                     SizedBox(height: 16),
-                    Container(
+                    SizedBox(
                       height: 200,
                       child: filtered.isEmpty
                           ? Center(child: Text('Tidak ada hasil'))
@@ -242,7 +242,7 @@ class _CreateMenuScreenState extends State<CreateMenuScreen> {
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: Text('Pilih Category'),
-              content: Container(
+              content: SizedBox(
                 width: double.maxFinite,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -267,7 +267,7 @@ class _CreateMenuScreenState extends State<CreateMenuScreen> {
                       },
                     ),
                     SizedBox(height: 16),
-                    Container(
+                    SizedBox(
                       height: 300,
                       child: filtered.isEmpty
                           ? Center(child: Text('Tidak ada hasil'))
@@ -333,7 +333,7 @@ class _CreateMenuScreenState extends State<CreateMenuScreen> {
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: Text('Pilih Outlet'),
-              content: Container(
+              content: SizedBox(
                 width: double.maxFinite,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -362,7 +362,7 @@ class _CreateMenuScreenState extends State<CreateMenuScreen> {
                       },
                     ),
                     SizedBox(height: 16),
-                    Container(
+                    SizedBox(
                       height: 300,
                       child: filtered.isEmpty
                           ? Center(child: Text('Tidak ada hasil'))
@@ -640,7 +640,7 @@ class _CreateMenuScreenState extends State<CreateMenuScreen> {
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: Text('Tambah Bahan Utama'),
-              content: Container(
+              content: SizedBox(
                 width: double.maxFinite,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,

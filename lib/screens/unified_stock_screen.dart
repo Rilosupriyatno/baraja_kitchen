@@ -39,11 +39,9 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
 
   bool _isInitialLoading = true;
   bool _isRefreshing = false;
-  bool _isSyncing = false;
   bool _isLoadingFromCache = false;
   double _loadingProgress = 0.0;
   String _loadingMessage = '';
-  String _errorMessage = '';
 
   final TextEditingController _searchController = TextEditingController();
   final Color _brandColor = Color(0xFF077A4B);
@@ -129,7 +127,6 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
       _isInitialLoading = true;
       _loadingProgress = 0.0;
       _loadingMessage = 'Memuat kategori...';
-      _errorMessage = '';
     });
 
     try {
@@ -218,7 +215,6 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString();
           _isInitialLoading = false;
         });
       }

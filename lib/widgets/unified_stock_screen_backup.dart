@@ -31,11 +31,9 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
 
   bool _isInitialLoading = true;
   bool _isRefreshing = false;
-  bool _isSyncing = false;
   bool _isLoadingFromCache = false; // ✨ Flag untuk loading dari cache
   double _loadingProgress = 0.0;
   String _loadingMessage = '';
-  String _errorMessage = '';
 
   final TextEditingController _searchController = TextEditingController();
   final Color _brandColor = Color(0xFF077A4B);
@@ -158,7 +156,6 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
       _isInitialLoading = true;
       _loadingProgress = 0.0;
       _loadingMessage = 'Memuat kategori...';
-      _errorMessage = '';
     });
 
     try {
@@ -267,7 +264,6 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString();
           _isInitialLoading = false;
         });
       }
@@ -812,7 +808,6 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
     }
 
     setState(() {
-      _isSyncing = true;
     });
 
     showDialog(
@@ -878,7 +873,6 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
       Navigator.of(context).pop();
 
       setState(() {
-        _isSyncing = false;
       });
     }
 
@@ -1645,7 +1639,7 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
           LayoutBuilder(
             builder: (context, constraints) {
               final double categoryWidth = constraints.maxWidth * 0.2;
-              final double menuWidth = constraints.maxWidth * 0.5;
+              final double _ = constraints.maxWidth * 0.5;
               final double editWidth = constraints.maxWidth * 0.3;
 
               return Row(

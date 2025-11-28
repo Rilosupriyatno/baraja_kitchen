@@ -1,6 +1,5 @@
 // services/thermal_print_service.dart
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:esc_pos_printer/esc_pos_printer.dart';
 import 'package:esc_pos_utils/esc_pos_utils.dart';
@@ -40,7 +39,7 @@ class ThermalPrintService {
   int _consecutiveFailures = 0;
   DateTime? _lastFailureTime;
   static const int _maxRetries = 3;
-  static const Duration _retryDelay = Duration(seconds: 2);
+  // static const Duration _retryDelay = Duration(seconds: 2);
   static const Duration _connectionTimeout = Duration(seconds: 10);
 
   String? _barType;
@@ -540,7 +539,7 @@ class ThermalPrintService {
   Future<bool> _printOrderItems(Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false, int attempt = 1, List<String>? logIds}) async {
     try {
       if (kDebugMode) {
-        print('🔥 [INSTANT] Print attempt $attempt/${_maxRetries}');
+        print('🔥 [INSTANT] Print attempt $attempt/$_maxRetries');
       }
 
       bool success;
@@ -1323,23 +1322,23 @@ class ThermalPrintService {
     };
   }
 
-  bool _isItemForThisWorkstation(OrderItem item, String currentWorkstation) {
-    if (currentWorkstation == 'kitchen') {
-      return !_isBeverageItem(item);
-    } else if (currentWorkstation.contains('bar')) {
-      return _isBeverageItem(item);
-    }
-    return true;
-  }
+  // bool _isItemForThisWorkstation(OrderItem item, String currentWorkstation) {
+  //   if (currentWorkstation == 'kitchen') {
+  //     return !_isBeverageItem(item);
+  //   } else if (currentWorkstation.contains('bar')) {
+  //     return _isBeverageItem(item);
+  //   }
+  //   return true;
+  // }
 
-  bool _isBeverageItem(OrderItem item) {
-    final beverageKeywords = [
-      'minuman', 'drink', 'beverage', 'juice', 'soda', 'cola', 'tea', 'coffee',
-      'kopi', 'teh', 'jus', 'susu', 'air', 'water', 'bir', 'beer', 'wine', 'cocktail'
-    ];
-    final itemName = item.name.toLowerCase();
-    return beverageKeywords.any((keyword) => itemName.contains(keyword));
-  }
+  // bool _isBeverageItem(OrderItem item) {
+  //   final beverageKeywords = [
+  //     'minuman', 'drink', 'beverage', 'juice', 'soda', 'cola', 'tea', 'coffee',
+  //     'kopi', 'teh', 'jus', 'susu', 'air', 'water', 'bir', 'beer', 'wine', 'cocktail'
+  //   ];
+  //   final itemName = item.name.toLowerCase();
+  //   return beverageKeywords.any((keyword) => itemName.contains(keyword));
+  // }
 
   Future<Map<String, dynamic>> _checkItemStock(OrderItem item) async {
     try {

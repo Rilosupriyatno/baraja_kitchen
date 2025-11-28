@@ -372,170 +372,168 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
           Divider(color: Colors.grey.shade200, height: 1),
           const SizedBox(height: 8),
 
-          Container(
-            child: Column(
-              children: widget.order.items.asMap().entries.map((entry) {
-                final index = entry.key;
-                final item = entry.value;
-                final isChecked = _checkedItems['${widget.order.orderId}_$index'] ?? false;
+          Column(
+            children: widget.order.items.asMap().entries.map((entry) {
+              final index = entry.key;
+              final item = entry.value;
+              final isChecked = _checkedItems['${widget.order.orderId}_$index'] ?? false;
 
-                final List<String> extras = [];
-                if (item.addons != null && item.addons!.isNotEmpty) {
-                  for (var addon in item.addons!) {
-                    String addonName = addon['name'] ?? '';
-                    if (addon['options'] != null) {
-                      for (var option in addon['options']) {
-                        extras.add('$addonName - ${option['label'] ?? ''}');
-                      }
+              final List<String> extras = [];
+              if (item.addons != null && item.addons!.isNotEmpty) {
+                for (var addon in item.addons!) {
+                  String addonName = addon['name'] ?? '';
+                  if (addon['options'] != null) {
+                    for (var option in addon['options']) {
+                      extras.add('$addonName - ${option['label'] ?? ''}');
                     }
                   }
                 }
-                if (item.toppings != null && item.toppings!.isNotEmpty) {
-                  for (var addon in item.toppings!) {
-                    String addonName = addon['name'] ?? '';
-                    if (addon['options'] != null) {
-                      for (var option in addon['options']) {
-                        extras.add('$addonName - ${option['label'] ?? ''}');
-                      }
+              }
+              if (item.toppings != null && item.toppings!.isNotEmpty) {
+                for (var addon in item.toppings!) {
+                  String addonName = addon['name'] ?? '';
+                  if (addon['options'] != null) {
+                    for (var option in addon['options']) {
+                      extras.add('$addonName - ${option['label'] ?? ''}');
                     }
                   }
                 }
+              }
 
-                return Container(
-                  margin: EdgeInsets.only(
-                    bottom: index < widget.order.items.length - 1 ? 12 : 0,
+              return Container(
+                margin: EdgeInsets.only(
+                  bottom: index < widget.order.items.length - 1 ? 12 : 0,
+                ),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isChecked ? brandColor.withOpacity(0.5) : Colors.grey.shade200,
+                    width: 1,
                   ),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isChecked ? brandColor.withOpacity(0.5) : Colors.grey.shade200,
-                      width: 1,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          if (widget.showTimer && !widget.isFinished)
-                            Container(
-                              margin: const EdgeInsets.only(right: 12),
-                              child: Checkbox(
-                                value: isChecked,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _checkedItems['${widget.order.orderId}_$index'] = value ?? false;
-                                  });
-                                },
-                                fillColor: MaterialStateProperty.resolveWith((states) {
-                                  if (states.contains(MaterialState.selected)) {
-                                    return brandColor;
-                                  }
-                                  return Colors.white;
-                                }),
-                                checkColor: Colors.white,
-                                side: BorderSide(
-                                  color: Colors.grey.shade400,
-                                  width: 1.5,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        if (widget.showTimer && !widget.isFinished)
+                          Container(
+                            margin: const EdgeInsets.only(right: 12),
+                            child: Checkbox(
+                              value: isChecked,
+                              onChanged: (value) {
+                                setState(() {
+                                  _checkedItems['${widget.order.orderId}_$index'] = value ?? false;
+                                });
+                              },
+                              fillColor: MaterialStateProperty.resolveWith((states) {
+                                if (states.contains(MaterialState.selected)) {
+                                  return brandColor;
+                                }
+                                return Colors.white;
+                              }),
+                              checkColor: Colors.white,
+                              side: BorderSide(
+                                color: Colors.grey.shade400,
+                                width: 1.5,
                               ),
-                            ),
-                          Expanded(
-                            child: Text(
-                              '${item.name} ${item.qty}x',
-                              style: TextStyle(
-                                color: isChecked ? Colors.grey.shade400 : Colors.black87,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                decoration: isChecked ? TextDecoration.lineThrough : null,
-                                decorationThickness: 2,
-                              ),
-                            ),
-                          ),
-                          if (isChecked)
-                            Icon(
-                              Icons.check_circle,
-                              color: brandColor,
-                              size: 18,
-                            ),
-                        ],
-                      ),
-
-                      if (extras.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: extras.map((extra) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: brandColor.withOpacity(0.08),
+                              shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: brandColor.withOpacity(0.2),
-                                  width: 1,
-                                ),
                               ),
-                              child: Text(
-                                extra,
-                                style: TextStyle(
-                                  color: brandColor,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ],
-
-                      if (item.notes != null && item.notes!.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.shade50,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: Colors.orange.shade200,
-                              width: 1,
                             ),
                           ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                Icons.chat_bubble_outline,
-                                size: 14,
-                                color: Colors.orange.shade700,
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  item.notes!,
-                                  style: TextStyle(
-                                    color: Colors.orange.shade900,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                              ),
-                            ],
+                        Expanded(
+                          child: Text(
+                            '${item.name} ${item.qty}x',
+                            style: TextStyle(
+                              color: isChecked ? Colors.grey.shade400 : Colors.black87,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              decoration: isChecked ? TextDecoration.lineThrough : null,
+                              decorationThickness: 2,
+                            ),
                           ),
                         ),
+                        if (isChecked)
+                          Icon(
+                            Icons.check_circle,
+                            color: brandColor,
+                            size: 18,
+                          ),
                       ],
+                    ),
+
+                    if (extras.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: extras.map((extra) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: brandColor.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: brandColor.withOpacity(0.2),
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              extra,
+                              style: TextStyle(
+                                color: brandColor,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
                     ],
-                  ),
-                );
-              }).toList(),
-            ),
+
+                    if (item.notes != null && item.notes!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: Colors.orange.shade200,
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.chat_bubble_outline,
+                              size: 14,
+                              color: Colors.orange.shade700,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                item.notes!,
+                                style: TextStyle(
+                                  color: Colors.orange.shade900,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }).toList(),
           ),
 
           if (widget.order.service.contains('Reservation') &&
@@ -715,29 +713,29 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
       ),
     );
   }
-
-  Widget _buildTimeButton(String label, int minutes) {
-    return OutlinedButton(
-      onPressed: () {
-        if (widget.onAddTime != null) {
-          widget.onAddTime!(widget.order, minutes);
-        }
-      },
-      style: OutlinedButton.styleFrom(
-        foregroundColor: brandColor,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        side: BorderSide(color: brandColor.withOpacity(0.3)),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
+  //
+  // Widget _buildTimeButton(String label, int minutes) {
+  //   return OutlinedButton(
+  //     onPressed: () {
+  //       if (widget.onAddTime != null) {
+  //         widget.onAddTime!(widget.order, minutes);
+  //       }
+  //     },
+  //     style: OutlinedButton.styleFrom(
+  //       foregroundColor: brandColor,
+  //       padding: const EdgeInsets.symmetric(vertical: 12),
+  //       side: BorderSide(color: brandColor.withOpacity(0.3)),
+  //       shape: RoundedRectangleBorder(
+  //         borderRadius: BorderRadius.circular(8),
+  //       ),
+  //     ),
+  //     child: Text(
+  //       label,
+  //       style: const TextStyle(
+  //         fontSize: 13,
+  //         fontWeight: FontWeight.w600,
+  //       ),
+  //     ),
+  //   );
+  // }
 }

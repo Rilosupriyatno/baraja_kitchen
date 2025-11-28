@@ -3,9 +3,6 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart' hide Category;
 import '../models/order.dart';
-import '../models/out_of_stock_model.dart';
-import '../models/stock_menu.dart';
-import '../models/category_model.dart';
 import '../services/order_service.dart';
 import '../services/socket_service.dart';
 import '../services/stockmenu_service.dart';
@@ -25,6 +22,7 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
   // You need to implement this getter to access barType from your specific widget
   String? get barType;
 
+  @override
   String get workstation {
     if (barType == 'depan' || barType == 'belakang') {
       return 'bar';
