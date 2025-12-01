@@ -1,3 +1,5 @@
+import 'package:shared_preferences/shared_preferences.dart';
+
 class Device {
   final String id;
   final Outlet outlet;
@@ -121,6 +123,79 @@ class Device {
       updatedAt: updatedAt ?? this.updatedAt,
       v: v ?? this.v,
     );
+  }
+
+  // Local Storage Methods
+  static const String _storageKey = 'selected_device';
+
+  // Simpan device yang dipilih ke local storage
+  Future<bool> saveToLocalStorage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final deviceJson = toJson();
+      await prefs.setString(_storageKey, deviceJson.toString());
+
+      // Simpan juga data penting secara terpisah untuk akses cepat
+      await prefs.setString('device_id', deviceId);
+      await prefs.setString('device_name', deviceName);
+      await prefs.setString('device_location', location);
+
+      print('✅ Device saved to local storage: $deviceName ($deviceId)');
+      return true;
+    } catch (e) {
+      print('❌ Error saving device to local storage: $e');
+      return false;
+    }
+  }
+
+  // Hapus device dari local storage
+  static Future<bool> clearFromLocalStorage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_storageKey);
+      await prefs.remove('device_id');
+      await prefs.remove('device_name');
+      await prefs.remove('device_location');
+
+      print('✅ Device cleared from local storage');
+      return true;
+    } catch (e) {
+      print('❌ Error clearing device from local storage: $e');
+      return false;
+    }
+  }
+
+  // Cek apakah ada device yang tersimpan
+  static Future<bool> hasStoredDevice() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.containsKey('device_id');
+    } catch (e) {
+      print('❌ Error checking stored device: $e');
+      return false;
+    }
+  }
+
+  // Get device info dari local storage
+  static Future<Map<String, String>?> getStoredDeviceInfo() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final deviceId = prefs.getString('device_id');
+      final deviceName = prefs.getString('device_name');
+      final deviceLocation = prefs.getString('device_location');
+
+      if (deviceId != null && deviceName != null) {
+        return {
+          'deviceId': deviceId,
+          'deviceName': deviceName,
+          'location': deviceLocation ?? '',
+        };
+      }
+      return null;
+    } catch (e) {
+      print('❌ Error getting stored device info: $e');
+      return null;
+    }
   }
 }
 

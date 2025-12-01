@@ -1,5 +1,6 @@
 // models/category_model.dart
-import 'package:baraja_bar/models/stock_menu.dart';
+
+import 'package:baraja_workstation/models/stock_menu.dart';
 
 class Category {
   final String id;

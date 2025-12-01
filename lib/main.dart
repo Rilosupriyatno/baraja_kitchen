@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:keep_screen_on/keep_screen_on.dart'; // Import package keep_screen_on
-import 'screens/bar_selection_screen.dart';
+import 'screens/device_selection_screen.dart';
 import 'config/app_theme.dart';
 
 void main() async {
@@ -26,7 +26,7 @@ class BarajaKitchenApp extends StatelessWidget {
       title: 'Baraja Workstation',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
-      home: const BarSelectionScreen(),
+      home: const DeviceSelectionScreen(),
     );
   }
 }

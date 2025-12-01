@@ -1,17 +1,17 @@
-// screens/bar_selection_screen.dart
+// screens/device_selection_screen.dart
 import 'package:flutter/material.dart';
-import 'package:baraja_bar/services/device_service.dart';
-import 'package:baraja_bar/models/device.dart';
+import '../models/device.dart';
+import '../services/device_service.dart';
 import 'kitchen_dashboard.dart';
 
-class BarSelectionScreen extends StatefulWidget {
-  const BarSelectionScreen({super.key});
+class DeviceSelectionScreen extends StatefulWidget {
+  const DeviceSelectionScreen({super.key});
 
   @override
-  State<BarSelectionScreen> createState() => _BarSelectionScreenState();
+  State<DeviceSelectionScreen> createState() => _DeviceSelectionScreenState();
 }
 
-class _BarSelectionScreenState extends State<BarSelectionScreen> {
+class _DeviceSelectionScreenState extends State<DeviceSelectionScreen> {
   static const Color brandColor = Color(0xFF077A4B);
   final DeviceService _deviceService = DeviceService();
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'package:flutter_bluetooth_serial/flutter_bluetooth_serial.dart';
+import '../models/device.dart';
 import '../models/order.dart';
 import '../models/out_of_stock_model.dart';
 import '../models/stock_menu.dart';
@@ -16,12 +17,18 @@ import 'package:flutter/foundation.dart' hide Category;
 import '../widgets/out_of_stock_dialog.dart';
 import '../widgets/table_stockmenu.dart';
 import '../widgets/unified_stock_screen_backup.dart';
+import 'device_selection_screen.dart';
 import 'batch_cooking_screen.dart';
 
 class KitchenDashboard extends StatefulWidget {
-  final String? barType; // 'depan', 'belakang', atau null untuk kitchen
+  final String? barType;
+  final Device? selectedDevice; // Tambahkan ini
 
-  const KitchenDashboard({super.key, this.barType});
+  const KitchenDashboard({
+    super.key,
+    this.barType,
+    this.selectedDevice, // Tambahkan ini
+  });
 
   @override
   State<KitchenDashboard> createState() => _KitchenDashboardState();
@@ -29,7 +36,6 @@ class KitchenDashboard extends StatefulWidget {
 
 class _KitchenDashboardState extends State<KitchenDashboard> {
   static const Color brandColor = Color(0xFF077A4B);
-
   List<Order> queue = [];
   List<Order> preparing = [];
   List<Order> done = [];
@@ -65,6 +71,24 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   @override
   void initState() {
     super.initState();
+
+    print('📱 KitchenDashboard initialized with barType: ${widget.selectedDevice}');
+    if (widget.selectedDevice != null) {
+      print('╔═══════════════════════════════════════════════════╗');
+      print('📱 DASHBOARD INITIALIZED WITH DEVICE:');
+      print('├───────────────────────────────────────────────────┤');
+      print('   Device ID: ${widget.selectedDevice!.deviceId}');
+      print('   Device Name: ${widget.selectedDevice!.deviceName}');
+      print('   Device Type: ${widget.selectedDevice!.deviceType}');
+      print('   Location: ${widget.selectedDevice!.location}');
+      print('   Outlet: ${widget.selectedDevice!.outlet.name}');
+      print('   Online Status: ${widget.selectedDevice!.isOnline ? "✅ ONLINE" : "❌ OFFLINE"}');
+      print('   Active: ${widget.selectedDevice!.isActive ? "✅ ACTIVE" : "❌ INACTIVE"}');
+      if (widget.selectedDevice!.notes.isNotEmpty) {
+        print('   Notes: ${widget.selectedDevice!.notes}');
+      }
+      print('╚═══════════════════════════════════════════════════╝');
+    }
     _printService.setBarType(widget.barType);
     _initializePrinter();
     _loadOrders();
@@ -99,7 +123,124 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   Future<void> _initializePrinter() async {
     await _printService.prewarmConnection();
   }
+  Future<void> _backToDeviceSelection() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber, color: Colors.orange[700], size: 28),
+            const SizedBox(width: 12),
+            const Text('Ganti Perangkat'),
+          ],
+        ),
+        content: const Text(
+          'Apakah Anda yakin ingin kembali ke pemilihan perangkat?\n\n'
+              'Perangkat saat ini akan dihapus dari penyimpanan.',
+          style: TextStyle(fontSize: 15),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: brandColor,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Ya, Ganti Perangkat'),
+          ),
+        ],
+      ),
+    );
 
+    if (confirmed == true && mounted) {
+      // Hapus device dari local storage
+      await Device.clearFromLocalStorage();
+
+      print('📱 Navigating back to device selection...');
+
+      // Navigate ke device selection
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const DeviceSelectionScreen(),
+        ),
+      );
+    }
+  }
+
+  // Tambahkan widget untuk device badge
+  Widget _buildDeviceBadge() {
+    if (widget.selectedDevice == null) return const SizedBox.shrink();
+
+    final device = widget.selectedDevice!;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      margin: const EdgeInsets.only(right: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: brandColor.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: brandColor.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: device.isOnline ? Colors.green : Colors.red,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.devices, size: 14, color: brandColor),
+          const SizedBox(width: 4),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 150),
+            child: Text(
+              device.deviceName,
+              style: TextStyle(
+                color: brandColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Tambahkan widget untuk back button
+  Widget _buildBackButton() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: IconButton(
+        icon: const Icon(Icons.exit_to_app, color: brandColor, size: 24),
+        onPressed: _backToDeviceSelection,
+        tooltip: 'Ganti Perangkat',
+      ),
+    );
+  }
   void _handleImmediatePrint(Map<String, dynamic> printData) async {
     try {
       if (!_autoPrintEnabled || !_printService.isConfigured) return;
@@ -860,25 +1001,50 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
         elevation: 1,
         toolbarHeight: 70,
         backgroundColor: appBarColor,
+        automaticallyImplyLeading: false, // Hilangkan default back button
         title: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
-              child: Image.asset('/images/Logo.jpg', height: 32, errorBuilder: (_, __, ___) => const Icon(Icons.restaurant, color: Colors.white, size: 32)),
+              child: Image.asset(
+                  '/images/Logo.jpg',
+                  height: 32,
+                  errorBuilder: (_, __, ___) => const Icon(
+                      Icons.restaurant,
+                      color: Colors.white,
+                      size: 32
+                  )
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(titleText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 20), overflow: TextOverflow.ellipsis),
+                  Text(
+                      titleText,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 20
+                      ),
+                      overflow: TextOverflow.ellipsis
+                  ),
                   const SizedBox(height: 2),
-                  Text(titleText, style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500)),
+                  Text(
+                      titleText,
+                      style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500
+                      )
+                  ),
                 ],
               ),
             ),
             _buildStatusBadge(),
+            _buildDeviceBadge(), // Tambahkan device badge
             if (_printService.isConfigured) _buildPrinterStatusBadge(),
             if (_printService.isConfigured) _buildAutoPrintBadge(),
             if (_notificationService.queueLength > 0) _buildNotificationBadge(),
@@ -887,6 +1053,8 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
             if (_outOfStockItems.isNotEmpty) _buildStockBadge(),
             const SizedBox(width: 8),
             _buildIconButton(Icons.refresh, _isLoading ? null : _loadOrders, 'Refresh'),
+            const SizedBox(width: 8),
+            _buildBackButton(), // Tambahkan back button
             const SizedBox(width: 8),
             _buildTimeBadge(),
           ],
@@ -906,10 +1074,17 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                 index: _selectedTabIndex,
                 children: [
                   _buildOrdersList(preparing, true, false),
-                  BatchCookingView(orders: preparing, onBatchComplete: _completeBatchOrders),
+                  BatchCookingView(
+                      orders: preparing,
+                      onBatchComplete: _completeBatchOrders
+                  ),
                   _buildOrdersList(done, false, true),
                   _buildOrdersList(reservations, false, false),
-                  TableStockmenu(stockMenu: stockmenu, onRefresh: _loadStockMenu, brandColor: brandColor),
+                  TableStockmenu(
+                      stockMenu: stockmenu,
+                      onRefresh: _loadStockMenu,
+                      brandColor: brandColor
+                  ),
                   _buildCategoriesPlaceholder(),
                 ],
               ),

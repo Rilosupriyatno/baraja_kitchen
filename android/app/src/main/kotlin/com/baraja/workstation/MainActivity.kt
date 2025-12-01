@@ -1,4 +1,4 @@
-package com.barajabar.baraja_bar
+package com.baraja.workstation
 
 import io.flutter.embedding.android.FlutterActivity
 
