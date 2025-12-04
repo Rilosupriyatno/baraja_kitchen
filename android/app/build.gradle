@@ -1,0 +1,234 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+// ---------------------------------------------------------------------------------------
+// 1. FUNGSI UNTUK MEMBACA KEY.PROPERTIES
+// ---------------------------------------------------------------------------------------
+def loadKeystoreProperties() {
+    def keyProps = [:]
+    def keyPropertiesFile = file('../key.properties')
+
+    if (keyPropertiesFile.exists()) {
+        def props = new Properties()
+        props.load(new FileInputStream(keyPropertiesFile))
+
+        println("✅ key.properties ditemukan di: ${keyPropertiesFile.getPath()}")
+
+        def storeFilePath = props['storeFile']
+        if (storeFilePath) {
+            def keystoreFile = file("../${storeFilePath}")
+            if (keystoreFile.exists()) {
+                keyProps['storeFile'] = keystoreFile
+                keyProps['storePassword'] = props['storePassword']
+                keyProps['keyAlias'] = props['keyAlias']
+                keyProps['keyPassword'] = props['keyPassword']
+                println("✅ Keystore file ditemukan: ${keystoreFile.getPath()}")
+            } else {
+                println("❌ Keystore file tidak ditemukan: ${keystoreFile.getPath()}")
+            }
+        }
+    } else {
+        println("❌ key.properties tidak ditemukan di ${keyPropertiesFile.getPath()}.")
+    }
+    return keyProps
+}
+
+def keystoreProperties = loadKeystoreProperties()
+
+// ---------------------------------------------------------------------------------------
+// 2. FUNGSI VERSION CODE (AUTO INCREMENT)
+// ---------------------------------------------------------------------------------------
+def getVersionCode() {
+    def versionPropsFile = file('version.properties')
+    if (versionPropsFile.canRead()) {
+        def Properties versionProps = new Properties()
+        versionProps.load(new FileInputStream(versionPropsFile))
+        return versionProps['VERSION_CODE'].toInteger()
+    }
+    return 1
+}
+
+def incrementVersionCode() {
+    def versionPropsFile = file('version.properties')
+    def code = 1
+    if (versionPropsFile.canRead()) {
+        def Properties versionProps = new Properties()
+        versionProps.load(new FileInputStream(versionPropsFile))
+        code = versionProps['VERSION_CODE'].toInteger() + 1
+    }
+    Properties versionProps = new Properties()
+    versionProps['VERSION_CODE'] = code.toString()
+    versionProps.store(versionPropsFile.newWriter(), null)
+    return code
+}
+
+android {
+    namespace = "com.baraja.workstation"
+    compileSdk = 36
+    ndkVersion = "27.0.12077973"
+
+    // ---------------------------------------------------------------------------------------
+    // 3. DEFINISIKAN SIGNING CONFIG
+    // ---------------------------------------------------------------------------------------
+    signingConfigs {
+        if (keystoreProperties.containsKey('storeFile') && keystoreProperties['storeFile'] != null) {
+            create("release") {
+                storeFile keystoreProperties['storeFile']
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+                println("✅ Signing Config 'release' berhasil didefinisikan.")
+            }
+        } else {
+            println("⚠️ Tidak membuat signing config release karena keystoreProperties tidak valid")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    defaultConfig {
+        applicationId = "com.baraja.workstation"
+        minSdkVersion = flutter.minSdkVersion
+        targetSdk = 35
+        versionCode = incrementVersionCode()
+        versionName = flutter.versionName
+    }
+
+    splits {
+        abi {
+            enable true
+            reset()
+            include "armeabi-v7a", "arm64-v8a"
+            universalApk true
+        }
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
+    buildTypes {
+        release {
+            if (signingConfigs.findByName("release")) {
+                signingConfig signingConfigs.release
+                println("✅ Menggunakan signing config 'release' untuk build release")
+            } else {
+                signingConfig signingConfigs.debug
+                println("⚠️ Menggunakan signing config debug untuk build release")
+            }
+            minifyEnabled false
+            shrinkResources false
+            debuggable false
+        }
+        debug {
+            signingConfig = signingConfigs.debug
+        }
+    }
+}
+
+flutter {
+    source = "../.."
+}
+
+dependencies {
+    // Tambahkan dependencies yang diperlukan
+}
+
+// ---------------------------------------------------------------------------------------
+// 4. AUTO RENAME FILE APK & AAB - FIXED VERSION
+// ---------------------------------------------------------------------------------------
+android.applicationVariants.all { variant ->
+    if (variant.buildType.name == "release") {
+        def versionName = variant.versionName
+        def versionCode = variant.versionCode
+        def appName = "workstation"
+
+        println("📱 Building variant: ${variant.name}")
+        println("📊 Version: ${versionName} (${versionCode})")
+
+        // --- LOGIC UNTUK APK ---
+        variant.outputs.all { output ->
+            def outputFile = output.outputFile
+            if (outputFile != null && outputFile.name.endsWith('.apk')) {
+                // Dapatkan nama ABI dari output
+                def abi = ""
+                if (output.getFilter(com.android.build.OutputFile.ABI)) {
+                    abi = "-" + output.getFilter(com.android.build.OutputFile.ABI)
+                } else if (outputFile.name.contains("universal")) {
+                    abi = "-universal"
+                }
+
+                def newName = "${appName}-v${versionName}(${versionCode})${abi}-release.apk"
+                output.outputFileName = newName
+                println("✅ APK akan dinamai: ${newName}")
+            }
+        }
+
+        // --- LOGIC UNTUK AAB (App Bundle) ---
+        // Hook ke task bundle
+        def bundleTask = project.tasks.findByName("bundle${variant.name.capitalize()}")
+        if (bundleTask) {
+            bundleTask.doLast {
+                def aabDir = file("${buildDir}/outputs/bundle/${variant.name}")
+                if (!aabDir.exists()) {
+                    aabDir = file("${buildDir}/outputs/bundle/${variant.buildType.name}")
+                }
+
+                if (aabDir.exists()) {
+                    // Cari file AAB
+                    def aabFiles = []
+                    aabDir.eachFile { file ->
+                        if (file.name.endsWith('.aab')) {
+                            aabFiles.add(file)
+                        }
+                    }
+
+                    // Rename file AAB
+                    aabFiles.each { aabFile ->
+                        def newName = "${appName}-v${versionName}(${versionCode})-release.aab"
+                        def newFile = new File(aabDir, newName)
+
+                        // Backup nama asli untuk debug
+                        def originalName = aabFile.name
+
+                        if (aabFile.renameTo(newFile)) {
+                            println("✅ AAB berhasil diganti nama: ${originalName} → ${newName}")
+                        } else {
+                            // Jika rename gagal, coba copy
+                            try {
+                                aabFile.withInputStream { input ->
+                                    newFile.withOutputStream { output ->
+                                        output << input
+                                    }
+                                }
+                                // Hapus file lama setelah copy berhasil
+                                if (newFile.exists() && newFile.length() > 0) {
+                                    aabFile.delete()
+                                }
+                                println("✅ AAB berhasil dicopy dengan nama: ${newName}")
+                            } catch (Exception e) {
+                                println("❌ Gagal rename/copy AAB: ${e.message}")
+                            }
+                        }
+                    }
+                } else {
+                    println("❌ Folder AAB tidak ditemukan: ${aabDir.path}")
+                }
+            }
+        } else {
+            println("⚠️ Task bundle tidak ditemukan untuk variant: ${variant.name}")
+        }
+    }
+}
