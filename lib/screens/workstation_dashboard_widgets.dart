@@ -1,6 +1,7 @@
-// screens/kitchen_dashboard_widgets.dart
+// screens/workstation_dashboard_widgets.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../models/device.dart';
 import '../models/order.dart';
 import '../models/out_of_stock_model.dart';
 import '../models/category_model.dart';
@@ -8,12 +9,12 @@ import '../services/notification_service.dart';
 import '../services/thermal_print_service.dart';
 import 'batch_cooking_screen.dart';
 
-class KitchenDashboardWidgets {
+class WorkstationDashboardWidgets {
   static const Color brandColor = Color(0xFF077A4B);
 
   static PreferredSizeWidget buildAppBar({
     required BuildContext context,
-    required String? barType,
+    required Device? selectedDevice,
     required DateTime currentTime,
     required ThermalPrintService printService,
     required bool autoPrintEnabled,
@@ -24,11 +25,16 @@ class KitchenDashboardWidgets {
     required VoidCallback onOutOfStockDialog,
     required VoidCallback onRefresh,
   }) {
-    final appBarColor = barType == 'depan'
-        ? Colors.blue[700]
-        : barType == 'belakang'
-        ? Colors.orange[700]
-        : brandColor;
+    // ✅ Determine colors based on device name
+    Color appBarColor = brandColor;
+    if (selectedDevice != null) {
+      final deviceNameLower = selectedDevice.deviceName.toLowerCase();
+      if (deviceNameLower.contains('depan')) {
+        appBarColor = Colors.blue[700]!;
+      } else if (deviceNameLower.contains('belakang')) {
+        appBarColor = Colors.orange[700]!;
+      }
+    }
 
     return AppBar(
       elevation: 1,
@@ -40,7 +46,7 @@ class KitchenDashboardWidgets {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
             child: Image.asset(
-              'assets/icons/logo.png',
+              '/images/Logo.jpg',
               height: 32,
               errorBuilder: (context, error, stackTrace) {
                 return const Icon(Icons.restaurant, color: Colors.white, size: 32);
@@ -53,11 +59,7 @@ class KitchenDashboardWidgets {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  barType == 'depan'
-                      ? 'Bar Depan'
-                      : barType == 'belakang'
-                      ? 'Bar Belakang'
-                      : 'Dapur Utama',
+                  selectedDevice?.workstationName ?? 'KITCHEN',
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
@@ -67,11 +69,7 @@ class KitchenDashboardWidgets {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  barType == 'depan'
-                      ? 'Bar Depan'
-                      : barType == 'belakang'
-                      ? 'Bar Belakang'
-                      : 'Dapur Utama',
+                  selectedDevice?.location ?? 'Main Kitchen',
                   style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 12,
@@ -81,7 +79,7 @@ class KitchenDashboardWidgets {
               ],
             ),
           ),
-          _buildBarTypeIndicator(barType),
+          _buildDeviceTypeIndicator(selectedDevice),
           if (printService.isConfigured) _buildPrinterStatus(printService),
           if (printService.isConfigured) _buildAutoPrintStatus(autoPrintEnabled),
           if (notificationService.queueLength > 0)
@@ -99,28 +97,65 @@ class KitchenDashboardWidgets {
     );
   }
 
-  static Widget _buildBarTypeIndicator(String? barType) {
-    // Define colors based on barType
+  static Widget _buildDeviceTypeIndicator(Device? device) {
+    if (device == null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        margin: const EdgeInsets.only(right: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFF9CC5B0)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.restaurant, size: 14, color: brandColor),
+            const SizedBox(width: 4),
+            Text(
+              'Kitchen',
+              style: TextStyle(
+                color: brandColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ✅ Determine colors based on device properties
     final Color bgColor;
     final Color borderColor;
     final Color iconColor;
     final Color textColor;
+    final IconData icon;
+    final String label;
 
-    if (barType == 'depan') {
+    final deviceNameLower = device.deviceName.toLowerCase();
+
+    if (deviceNameLower.contains('depan')) {
       bgColor = Colors.blue[50]!;
       borderColor = Colors.blue[300]!;
       iconColor = Colors.blue[700]!;
       textColor = Colors.blue[900]!;
-    } else if (barType == 'belakang') {
+      icon = Icons.local_bar;
+      label = 'Bar Depan';
+    } else if (deviceNameLower.contains('belakang')) {
       bgColor = Colors.orange[50]!;
       borderColor = Colors.orange[300]!;
       iconColor = Colors.orange[700]!;
       textColor = Colors.orange[900]!;
+      icon = Icons.local_bar;
+      label = 'Bar Belakang';
     } else {
       bgColor = Colors.white;
       borderColor = const Color(0xFF9CC5B0);
       iconColor = brandColor;
       textColor = const Color(0xFF055234);
+      icon = Icons.restaurant;
+      label = device.deviceType;
     }
 
     return Container(
@@ -134,20 +169,10 @@ class KitchenDashboardWidgets {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            barType == 'depan' || barType == 'belakang'
-                ? Icons.local_bar
-                : Icons.restaurant,
-            size: 14,
-            color: iconColor,
-          ),
+          Icon(icon, size: 14, color: iconColor),
           const SizedBox(width: 4),
           Text(
-            barType == 'depan'
-                ? 'Depan'
-                : barType == 'belakang'
-                ? 'Belakang'
-                : 'Dapur',
+            label,
             style: TextStyle(
               color: textColor,
               fontSize: 11,

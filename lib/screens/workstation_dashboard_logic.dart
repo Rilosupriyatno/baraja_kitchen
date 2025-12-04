@@ -1,50 +1,44 @@
-// screens/kitchen_dashboard_logic.dart
+// screens/workstation_dashboard_logic.dart (UPDATED - Using Workstation API)
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart' hide Category;
 import '../models/order.dart';
+import '../models/device.dart';
 import '../services/order_service.dart';
 import '../services/socket_service.dart';
 import '../services/stockmenu_service.dart';
-import 'kitchen_dashboard_state.dart';
+import 'workstation_dashboard_state.dart';
 import 'printer_settings_dialog.dart';
 import '../widgets/unified_stock_screen_backup.dart';
 import 'batch_cooking_screen.dart';
 import '../widgets/order_card_compact.dart';
 
-/// Mixin untuk business logic KitchenDashboard
-/// T should be your KitchenDashboard widget class that has barType property
-mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements KitchenDashboardState {
+mixin WorkstationDashboardLogic<T extends StatefulWidget> on State<T> implements WorkstationDashboardState {
 
-  // Define brandColor - adjust this color to match your app's theme
-  Color get brandColor => const Color(0xFF077A4B); // Or get from widget/theme
+  Color get brandColor => const Color(0xFF077A4B);
 
-  // You need to implement this getter to access barType from your specific widget
-  String? get barType;
+  Device get currentDevice;
 
   @override
-  String get workstation {
-    if (barType == 'depan' || barType == 'belakang') {
-      return 'bar';
-    } else {
-      return 'kitchen';
-    }
-  }
+  String get workstation => currentDevice.workstationTypeString;
 
-  // Remove this invalid override - State already has 'widget' property
-  // dynamic get widget;
+  String get workstationDisplayName => currentDevice.workstationName;
 
   @override
   void initState() {
     super.initState();
 
-    printService.setBarType(barType);
+    printService.setDevice(currentDevice);
 
     if (kDebugMode) {
-      print('╔═══════════════════════════════════════╗');
-      print('📍 Dashboard barType: $barType');
-      print('📍 Workstation: $workstation');
-      print('╚═══════════════════════════════════════╝');
+      print('╔═══════════════════════════════════════════════════════╗');
+      print('📱 Dashboard Device: ${currentDevice.deviceName}');
+      print('📍 Workstation Type: $workstation');
+      print('📍 Display Name: $workstationDisplayName');
+      print('📍 Location: ${currentDevice.location}');
+      print('📍 Handles Beverages: ${currentDevice.shouldHandleBeverages}');
+      print('📍 Handles Kitchen: ${currentDevice.shouldHandleKitchen}');
+      print('╚═══════════════════════════════════════════════════════╝');
     }
 
     loadOrders();
@@ -57,24 +51,25 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
       loadOutOfStockItems();
     });
 
-    const outletId = "outlet-1";
+    final outletId = currentDevice.outlet.id;
 
     SocketService.connect(
       outletId: outletId,
-      barType: barType,
+      device: currentDevice,
       onNewOrder: (_) => refreshOrders(),
       onBeverageOrder: (beverageData) {
-        if (barType != null) {
+        if (currentDevice.shouldHandleBeverages) {
           handleBeverageOrder(beverageData);
         }
       },
       onStockUpdate: (stockData) {
         if (kDebugMode) {
-          print('📦 Stock updated received in dashboard: ${stockData['menuItemId']}');
+          print('📦 Stock updated: ${stockData['menuItemId']}');
         }
         refreshOutOfStockAfterUpdate(stockData['menuItemId'] ?? '');
         loadStockMenu();
       },
+      onImmediatePrint: handleImmediatePrint,
     );
   }
 
@@ -87,8 +82,6 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
     notificationService.dispose();
     super.dispose();
   }
-
-  // ========== INITIALIZATION ==========
 
   void initializeTimers() {
     mainTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -103,8 +96,7 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
     });
   }
 
-  // ========== LOADING DATA ==========
-
+  // ✅ UPDATED: Using new workstation endpoint
   Future<void> loadOrders() async {
     setState(() {
       isLoading = true;
@@ -112,14 +104,25 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
     });
 
     try {
-      final ordersMap = (barType == 'depan' || barType == 'belakang')
-          ? await OrderService.refreshBarOrders(barType!)
-          : await OrderService.refreshKitchenOrders();
+      if (kDebugMode) {
+        print('📡 Loading orders for ${currentDevice.deviceName}...');
+      }
+
+      final ordersMap = await OrderService.refreshWorkstationOrders(currentDevice);
       await mergeOrdersWithAlertState(ordersMap, isInitialLoad: true);
+
       setState(() {
         isLoading = false;
       });
+
+      if (kDebugMode) {
+        print('✅ Orders loaded successfully');
+      }
     } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error loading orders: $e');
+      }
+
       setState(() {
         errorMessage = e.toString();
         isLoading = false;
@@ -127,19 +130,22 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
     }
   }
 
+  // ✅ UPDATED: Using new workstation endpoint
   Future<void> refreshOrders() async {
     try {
-      final orderService = (barType == 'depan' || barType == 'belakang')
-          ? await OrderService.refreshBarOrders(barType!)
-          : await OrderService.refreshKitchenOrders();
-      await mergeOrdersWithAlertState(orderService);
+      if (kDebugMode) {
+        print('🔄 Refreshing orders for ${currentDevice.workstationTypeString}...');
+      }
+
+      final ordersMap = await OrderService.refreshWorkstationOrders(currentDevice);
+      await mergeOrdersWithAlertState(ordersMap);
 
       if (kDebugMode && preparing.isNotEmpty) {
         debugPrintStatus(preparing.first);
       }
     } catch (e) {
       if (kDebugMode) {
-        print('Error refreshing orders: $e');
+        print('❌ Error refreshing orders: $e');
       }
     }
   }
@@ -190,8 +196,6 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
     }
   }
 
-  // ========== ORDER PROCESSING ==========
-
   Future<void> mergeOrdersWithAlertState(
       Map<String, List<Order>> ordersMap, {
         bool isInitialLoad = false,
@@ -201,7 +205,7 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
     final newDone = ordersMap['completed'] ?? [];
     final newReservations = ordersMap['reservations'] ?? [];
 
-    // Auto-confirm waiting orders
+    // ✅ Auto-confirm waiting orders using Device context
     final confirmedOrders = <Order>[];
     for (var order in newWaiting) {
       if (order.orderId != null) {
@@ -209,7 +213,12 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
           print('🚀 Auto-confirming ${order.orderType ?? 'order'} ${order.orderId}');
         }
 
-        final updated = await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
+        final updated = await OrderService.updateWorkstationOrderStatus(
+          order.orderId!,
+          'OnProcess',
+          currentDevice,
+        );
+
         if (updated) {
           order.status = 'OnProcess';
           confirmedOrders.add(order);
@@ -217,14 +226,19 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
       }
     }
 
-    // Auto-confirm reservations
+    // ✅ Auto-confirm reservations
     for (var order in newReservations) {
       if (order.orderId != null && OrderService.shouldMoveReservationToPreparation(order)) {
         if (kDebugMode) {
           print('📅 Auto-confirming reservation ${order.orderId}');
         }
 
-        final updated = await OrderService.updateOrderStatus(order.orderId!, 'OnProcess');
+        final updated = await OrderService.updateWorkstationOrderStatus(
+          order.orderId!,
+          'OnProcess',
+          currentDevice,
+        );
+
         if (updated) {
           order.status = 'OnProcess';
           confirmedOrders.add(order);
@@ -234,7 +248,6 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
 
     final allPreparing = [...newPreparing, ...confirmedOrders];
 
-    // Process new items & auto-print
     if (!isInitialLoad) {
       await processNewItems(allPreparing);
       await processNewReservations(newReservations);
@@ -242,12 +255,10 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
       trackExistingItems([...allPreparing, ...newDone, ...newReservations]);
     }
 
-    // Initialize alert map
     for (var o in allPreparing) {
       alertPlayedMap.putIfAbsent(o.orderId ?? "", () => false);
     }
 
-    // Sort orders
     allPreparing.sort((a, b) => (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)));
     newDone.sort((a, b) => (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)));
     newReservations.sort((a, b) => (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)));
@@ -354,8 +365,81 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
     }
   }
 
-  // ========== ORDER ACTIONS ==========
+  void handleImmediatePrint(Map<String, dynamic> printData) async {
+    try {
+      if (!autoPrintEnabled || !printService.isConfigured) return;
 
+      final orderId = printData['orderId'] as String?;
+      if (orderId == null) return;
+
+      notificationService
+          .playNewOrderNotification(orderId, soundPath: 'sounds/alert.mp3')
+          .catchError((e) => false);
+
+      final orderItems = (printData['orderItems'] as List<dynamic>?)
+          ?.map((item) => OrderItem(
+        itemId: item['_id'] ?? '',
+        menuItemId: item['menuItemId'],
+        name: item['name'] ?? '',
+        qty: item['quantity'] ?? 1,
+        notes: item['notes'],
+        addons: item['addons'],
+        toppings: item['toppings'],
+        workstation: item['workstation'] ?? 'kitchen',
+        mainCategory: item['mainCategory'],
+      ))
+          .toList() ?? [];
+
+      if (orderItems.isEmpty) return;
+
+      final workstationItems = orderItems.where((item) {
+        final mainCat = (item.mainCategory ?? '').toLowerCase();
+        final ws = (item.workstation ?? '').toLowerCase();
+
+        if (currentDevice.shouldHandleBeverages) {
+          return mainCat.contains('beverage') || mainCat.contains('minuman') || ws.contains('bar');
+        } else if (currentDevice.shouldHandleKitchen) {
+          return !mainCat.contains('beverage') && !mainCat.contains('minuman') && !ws.contains('bar');
+        } else {
+          return true;
+        }
+      }).toList();
+
+      if (workstationItems.isEmpty) return;
+
+      for (final item in workstationItems) {
+        displayedItemIds.add(item.itemId);
+      }
+
+      final tempOrder = Order(
+        orderId: orderId,
+        name: printData['name'] ?? 'Guest',
+        table: printData['tableNumber'] ?? '',
+        status: 'OnProcess',
+        items: workstationItems,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        createdAtWIB: DateTime.now(),
+        updatedAtWIB: DateTime.now(),
+        service: printData['service'] ?? 'Dine-In',
+        orderType: printData['orderType'] ?? 'dine-in',
+        source: printData['source'] ?? 'Cashier',
+        paymentMethod: printData['paymentMethod'] ?? 'Cash',
+      );
+
+      printService.autoPrintOrder(tempOrder, isOpenBill: false).then((printed) {
+        if (printed && mounted) {
+          showPrintSuccessSnackbar(orderId);
+        }
+      }).catchError((e) {
+        if (kDebugMode) print('❌ Immediate print error: $e');
+      });
+    } catch (e) {
+      if (kDebugMode) print('❌ Error handling immediate print: $e');
+    }
+  }
+
+  // ✅ UPDATED: Using new workstation endpoint
   void completeOrder(Order order) async {
     setState(() {
       preparing.remove(order);
@@ -363,7 +447,11 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
     });
 
     if (order.orderId != null) {
-      await OrderService.updateOrderStatus(order.orderId!, 'Completed');
+      await OrderService.updateWorkstationOrderStatus(
+        order.orderId!,
+        'Completed',
+        currentDevice,
+      );
     }
     showOrderCompleteDialog(order);
   }
@@ -380,7 +468,11 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
         done.add(order);
       });
 
-      await OrderService.updateOrderStatus(orderId, 'Completed');
+      await OrderService.updateWorkstationOrderStatus(
+        orderId,
+        'Completed',
+        currentDevice,
+      );
     }
 
     showBatchCompleteDialog(orderIds.length);
@@ -393,8 +485,6 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
       }
     });
   }
-
-  // ========== UTILITY METHODS ==========
 
   void checkForLateOrders() {
     for (var order in queue) {
@@ -453,17 +543,15 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
   }
 
   void debugPrintStatus(Order order) {
-    print('┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓');
+    print('┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓');
     print('📊 DEBUG: Order ${order.orderId}');
-    print('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛');
+    print('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛');
     print('Total items: ${order.items.length}');
     for (final item in order.items) {
       final isPrinted = printService.isItemAlreadyPrinted(item.itemId);
       print('  ${isPrinted ? "✅" : "❌"} ${item.name} (${item.itemId})');
     }
   }
-
-  // ========== DIALOGS & UI ==========
 
   void handleBeverageOrder(Map<String, dynamic> beverageData) {
     notificationService.playNewOrderNotification(
@@ -506,7 +594,7 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
   }
 
   void showOutOfStockDialog() {
-    // Implementation moved to widgets file
+    // Implementation in widgets file
   }
 
   void showPrinterSettings() {
@@ -601,8 +689,6 @@ mixin KitchenDashboardLogic<T extends StatefulWidget> on State<T> implements Kit
       ),
     );
   }
-
-  // ========== BUILD METHODS ==========
 
   Widget buildOrdersList(List<Order> orders, bool showTimer, bool isFinished) {
     final filteredOrders = getFilteredOrders(orders);

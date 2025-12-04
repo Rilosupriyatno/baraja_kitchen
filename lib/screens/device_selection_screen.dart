@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import '../models/device.dart';
 import '../services/device_service.dart';
-import 'kitchen_dashboard.dart';
+import 'workstation_dashboard.dart';
 
 class DeviceSelectionScreen extends StatefulWidget {
   const DeviceSelectionScreen({super.key});
@@ -332,7 +332,7 @@ class _DeviceSelectionScreenState extends State<DeviceSelectionScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: _BarTypeCard(
+            child: _DeviceTypeCard(
               title: _devices[0].deviceName,
               icon: Icons.local_bar,
               isSelected: _selectedDeviceId == _devices[0].deviceId,
@@ -348,7 +348,7 @@ class _DeviceSelectionScreenState extends State<DeviceSelectionScreen> {
           ),
           SizedBox(width: isTablet ? 24 : 16),
           Expanded(
-            child: _BarTypeCard(
+            child: _DeviceTypeCard(
               title: _devices[1].deviceName,
               icon: Icons.local_bar_outlined,
               isSelected: _selectedDeviceId == _devices[1].deviceId,
@@ -387,7 +387,7 @@ class _DeviceSelectionScreenState extends State<DeviceSelectionScreen> {
 
         return SizedBox(
           width: cardWidth,
-          child: _BarTypeCard(
+          child: _DeviceTypeCard(
             title: device.deviceName,
             icon: icons[index % icons.length],
             isSelected: _selectedDeviceId == device.deviceId,
@@ -428,8 +428,9 @@ class _DeviceSelectionScreenState extends State<DeviceSelectionScreen> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => KitchenDashboard(
-            barType: selectedDevice.location,
+          builder: (context) => WorkstationDashboard(
+            // barType: selectedDevice.location,
+            selectedDevice: selectedDevice,
           ),
         ),
       );
@@ -437,7 +438,7 @@ class _DeviceSelectionScreenState extends State<DeviceSelectionScreen> {
   }
 }
 
-class _BarTypeCard extends StatelessWidget {
+class _DeviceTypeCard extends StatelessWidget {
   final String title;
   final IconData icon;
   final bool isSelected;
@@ -446,7 +447,7 @@ class _BarTypeCard extends StatelessWidget {
   final bool isTablet;
   final VoidCallback onTap;
 
-  const _BarTypeCard({
+  const _DeviceTypeCard({
     required this.title,
     required this.icon,
     required this.isSelected,

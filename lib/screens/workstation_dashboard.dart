@@ -20,21 +20,19 @@ import '../widgets/unified_stock_screen_backup.dart';
 import 'device_selection_screen.dart';
 import 'batch_cooking_screen.dart';
 
-class KitchenDashboard extends StatefulWidget {
-  final String? barType;
-  final Device? selectedDevice; // Tambahkan ini
+class WorkstationDashboard extends StatefulWidget {
+  final Device selectedDevice; // ✅ UPDATED: Only use Device object
 
-  const KitchenDashboard({
+  const WorkstationDashboard({
     super.key,
-    this.barType,
-    this.selectedDevice, // Tambahkan ini
+    required this.selectedDevice, // ✅ UPDATED: Required Device object
   });
 
   @override
-  State<KitchenDashboard> createState() => _KitchenDashboardState();
+  State<WorkstationDashboard> createState() => _WorkstationDashboardState();
 }
 
-class _KitchenDashboardState extends State<KitchenDashboard> {
+class _WorkstationDashboardState extends State<WorkstationDashboard> {
   static const Color brandColor = Color(0xFF077A4B);
   List<Order> queue = [];
   List<Order> preparing = [];
@@ -60,36 +58,58 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   Timer? _stockCheckTimer;
   bool _autoPrintEnabled = true;
 
-  String get workstation {
-    if (widget.barType == 'depan' || widget.barType == 'belakang') {
-      return 'bar';
-    } else {
-      return 'kitchen';
-    }
+
+  String get workstationType => widget.selectedDevice.workstationTypeString;
+  String get displayHeader => widget.selectedDevice.workstationName;
+  Color get appBarColor => widget.selectedDevice.effectiveThemeColor;
+
+
+  // ✅ NEW: Get unique identifier for this device
+  String get uniqueDeviceId {
+    return widget.selectedDevice.uniqueIdentifier;
+  }
+
+  // ✅ NEW: Get workstation key for API calls
+  String get workstationKey {
+    return widget.selectedDevice.workstationKey;
   }
 
   @override
   void initState() {
     super.initState();
 
-    print('📱 KitchenDashboard initialized with barType: ${widget.selectedDevice}');
-    if (widget.selectedDevice != null) {
-      print('╔═══════════════════════════════════════════════════╗');
-      print('📱 DASHBOARD INITIALIZED WITH DEVICE:');
-      print('├───────────────────────────────────────────────────┤');
-      print('   Device ID: ${widget.selectedDevice!.deviceId}');
-      print('   Device Name: ${widget.selectedDevice!.deviceName}');
-      print('   Device Type: ${widget.selectedDevice!.deviceType}');
-      print('   Location: ${widget.selectedDevice!.location}');
-      print('   Outlet: ${widget.selectedDevice!.outlet.name}');
-      print('   Online Status: ${widget.selectedDevice!.isOnline ? "✅ ONLINE" : "❌ OFFLINE"}');
-      print('   Active: ${widget.selectedDevice!.isActive ? "✅ ACTIVE" : "❌ INACTIVE"}');
-      if (widget.selectedDevice!.notes.isNotEmpty) {
-        print('   Notes: ${widget.selectedDevice!.notes}');
-      }
-      print('╚═══════════════════════════════════════════════════╝');
+    // ✅ UPDATED: Enhanced device logging
+    print('📱 WorkstationDashboard initialized with device: ${widget.selectedDevice.deviceName}');
+    print('╔═══════════════════════════════════════════════════╗');
+    print('📱 DASHBOARD INITIALIZED WITH DEVICE:');
+    print('├───────────────────────────────────────────────────┤');
+    print('   Device ID: ${widget.selectedDevice.deviceId}');
+    print('   Device Name: ${widget.selectedDevice.deviceName}');
+    print('   Device Type: ${widget.selectedDevice.deviceType}');
+    print('   Location: ${widget.selectedDevice.location}');
+    print('   Outlet: ${widget.selectedDevice.outlet.name}');
+    print('   Workstation Type: $workstationType');
+    print('   Unique ID: $uniqueDeviceId');
+    print('   Online Status: ${widget.selectedDevice.isOnline ? "✅ ONLINE" : "❌ OFFLINE"}');
+    print('   Active: ${widget.selectedDevice.isActive ? "✅ ACTIVE" : "❌ INACTIVE"}');
+    print('   Handles Beverages: ${widget.selectedDevice.shouldHandleBeverages}');
+    print('   Handles Kitchen: ${widget.selectedDevice.shouldHandleKitchen}');
+    if (widget.selectedDevice.notes.isNotEmpty) {
+      print('   Notes: ${widget.selectedDevice.notes}');
     }
-    _printService.setBarType(widget.barType);
+    if (widget.selectedDevice.assignedAreas.isNotEmpty) {
+      print('   Assigned Areas: ${widget.selectedDevice.assignedAreas.join(", ")}');
+    }
+    if (widget.selectedDevice.assignedTables.isNotEmpty) {
+      print('   Assigned Tables: ${widget.selectedDevice.assignedTables.join(", ")}');
+    }
+    if (widget.selectedDevice.orderTypes.isNotEmpty) {
+      print('   Order Types: ${widget.selectedDevice.orderTypes.join(", ")}');
+    }
+    print('╚═══════════════════════════════════════════════════╝');
+
+    // ✅ UPDATED: Use workstationType instead of barType
+    _printService.setDevice(widget.selectedDevice);
     _initializePrinter();
     _loadOrders();
     _loadStockMenu();
@@ -101,14 +121,15 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       _loadOutOfStockItems();
     });
 
-    const outletId = "outlet-1";
+    // ✅ UPDATED: Use outlet ID from device
+    final outletId = widget.selectedDevice.outlet.id;
 
     SocketService.connect(
       outletId: outletId,
-      barType: widget.barType,
+      device: widget.selectedDevice,
       onNewOrder: (_) => _refreshOrders(),
       onBeverageOrder: (beverageData) {
-        if (widget.barType != null) {
+        if (widget.selectedDevice.shouldHandleBeverages) {
           _handleBeverageOrder(beverageData);
         }
       },
@@ -123,6 +144,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   Future<void> _initializePrinter() async {
     await _printService.prewarmConnection();
   }
+
   Future<void> _backToDeviceSelection() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -175,11 +197,9 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     }
   }
 
-  // Tambahkan widget untuk device badge
+  // ✅ UPDATED: Enhanced device badge
   Widget _buildDeviceBadge() {
-    if (widget.selectedDevice == null) return const SizedBox.shrink();
-
-    final device = widget.selectedDevice!;
+    final device = widget.selectedDevice;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -227,7 +247,6 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     );
   }
 
-  // Tambahkan widget untuk back button
   Widget _buildBackButton() {
     return Container(
       decoration: BoxDecoration(
@@ -241,12 +260,37 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       ),
     );
   }
+
   void _handleImmediatePrint(Map<String, dynamic> printData) async {
     try {
       if (!_autoPrintEnabled || !_printService.isConfigured) return;
 
       final orderId = printData['orderId'] as String?;
+      final tableNumber = printData['tableNumber'] as String? ?? '';
+      final orderType = printData['orderType'] as String? ?? 'dine-in';
+
+      // ✅ NEW: Get device ID from backend
+      final targetDeviceId = printData['deviceId'] as String?;
+      final targetDeviceName = printData['targetDevice'] as String?;
+
       if (orderId == null) return;
+
+      // ✅ CRITICAL: Check device ID match FIRST
+      if (targetDeviceId != null && targetDeviceId.isNotEmpty) {
+        if (widget.selectedDevice.deviceId != targetDeviceId) {
+          if (kDebugMode) {
+            print('⏭️ [${widget.selectedDevice.deviceName}] SKIPPING order $orderId');
+            print('   Target device: $targetDeviceName ($targetDeviceId)');
+            print('   This device: ${widget.selectedDevice.deviceName} (${widget.selectedDevice.deviceId})');
+          }
+          return;
+        }
+
+        if (kDebugMode) {
+          print('✅ [${widget.selectedDevice.deviceName}] Device ID MATCH for $orderId');
+          print('   Backend explicitly sent to this device');
+        }
+      }
 
       _notificationService
           .playNewOrderNotification(orderId, soundPath: 'sounds/alert.mp3')
@@ -268,15 +312,18 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
       if (orderItems.isEmpty) return;
 
+      // ✅ UPDATED: Use device properties for filtering
       final workstationItems = orderItems.where((item) {
         final mainCat = (item.mainCategory ?? '').toLowerCase();
         final ws = (item.workstation ?? '').toLowerCase();
-        final isBar = widget.barType == 'depan' || widget.barType == 'belakang';
 
-        if (isBar) {
+        if (widget.selectedDevice.shouldHandleBeverages) {
           return mainCat.contains('beverage') || mainCat.contains('minuman') || ws.contains('bar');
-        } else {
+        } else if (widget.selectedDevice.shouldHandleKitchen) {
           return !mainCat.contains('beverage') && !mainCat.contains('minuman') && !ws.contains('bar');
+        } else {
+          // Fallback logic for general devices
+          return true;
         }
       }).toList();
 
@@ -313,10 +360,85 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       if (kDebugMode) print('❌ Error handling immediate print: $e');
     }
   }
+  // void _handleImmediatePrint(Map<String, dynamic> printData) async {
+  //   try {
+  //     if (!_autoPrintEnabled || !_printService.isConfigured) return;
+  //
+  //     final orderId = printData['orderId'] as String?;
+  //     if (orderId == null) return;
+  //
+  //     _notificationService
+  //         .playNewOrderNotification(orderId, soundPath: 'sounds/alert.mp3')
+  //         .catchError((e) => false);
+  //
+  //     final orderItems = (printData['orderItems'] as List<dynamic>?)
+  //         ?.map((item) => OrderItem(
+  //       itemId: item['_id'] ?? '',
+  //       menuItemId: item['menuItemId'],
+  //       name: item['name'] ?? '',
+  //       qty: item['quantity'] ?? 1,
+  //       notes: item['notes'],
+  //       addons: item['addons'],
+  //       toppings: item['toppings'],
+  //       workstation: item['workstation'] ?? 'kitchen',
+  //       mainCategory: item['mainCategory'],
+  //     ))
+  //         .toList() ?? [];
+  //
+  //     if (orderItems.isEmpty) return;
+  //
+  //     // ✅ UPDATED: Use device properties for filtering
+  //     final workstationItems = orderItems.where((item) {
+  //       final mainCat = (item.mainCategory ?? '').toLowerCase();
+  //       final ws = (item.workstation ?? '').toLowerCase();
+  //
+  //       if (widget.selectedDevice.shouldHandleBeverages) {
+  //         return mainCat.contains('beverage') || mainCat.contains('minuman') || ws.contains('bar');
+  //       } else if (widget.selectedDevice.shouldHandleKitchen) {
+  //         return !mainCat.contains('beverage') && !mainCat.contains('minuman') && !ws.contains('bar');
+  //       } else {
+  //         // Fallback logic for general devices
+  //         return true;
+  //       }
+  //     }).toList();
+  //
+  //     if (workstationItems.isEmpty) return;
+  //
+  //     for (final item in workstationItems) {
+  //       _displayedItemIds.add(item.itemId);
+  //     }
+  //
+  //     final tempOrder = Order(
+  //       orderId: orderId,
+  //       name: printData['name'] ?? 'Guest',
+  //       table: printData['tableNumber'] ?? '',
+  //       status: 'OnProcess',
+  //       items: workstationItems,
+  //       createdAt: DateTime.now(),
+  //       updatedAt: DateTime.now(),
+  //       createdAtWIB: DateTime.now(),
+  //       updatedAtWIB: DateTime.now(),
+  //       service: printData['service'] ?? 'Dine-In',
+  //       orderType: printData['orderType'] ?? 'dine-in',
+  //       source: printData['source'] ?? 'Cashier',
+  //       paymentMethod: printData['paymentMethod'] ?? 'Cash',
+  //     );
+  //
+  //     _printService.autoPrintOrder(tempOrder, isOpenBill: false).then((printed) {
+  //       if (printed && mounted) {
+  //         _showPrintSuccessSnackbar(orderId);
+  //       }
+  //     }).catchError((e) {
+  //       if (kDebugMode) print('❌ Immediate print error: $e');
+  //     });
+  //   } catch (e) {
+  //     if (kDebugMode) print('❌ Error handling immediate print: $e');
+  //   }
+  // }
 
   Future<void> _loadOutOfStockItems() async {
     try {
-      final items = await StockMenuService.getOutOfStockItems(workstation);
+      final items = await StockMenuService.getOutOfStockItems(workstationType);
       if (mounted) setState(() => _outOfStockItems = items);
     } catch (e) {
       if (kDebugMode) print('Error loading out of stock items: $e');
@@ -329,7 +451,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       barrierDismissible: true,
       builder: (context) => OutOfStockDialog(
         outOfStockItems: _outOfStockItems,
-        workstation: workstation,
+        workstation: workstationType,
         brandColor: brandColor,
         onRefresh: () async {
           await _loadOutOfStockItems();
@@ -344,7 +466,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
   Future<void> _refreshOutOfStockAfterUpdate(String menuItemId) async {
     try {
-      final updatedItems = await StockMenuService.getOutOfStockItems(workstation);
+      final updatedItems = await StockMenuService.getOutOfStockItems(workstationType);
       if (mounted) {
         setState(() => _outOfStockItems = updatedItems);
         if (updatedItems.isEmpty && Navigator.canPop(context)) {
@@ -370,7 +492,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
   Future<void> _loadCategories() async {
     try {
-      final data = await StockMenuService.getCategoriesByWorkstation(workstation);
+      final data = await StockMenuService.getCategoriesByWorkstation(workstationType);
       if (mounted) setState(() => categories = data);
     } catch (e) {
       if (kDebugMode) print('Error loading categories: $e');
@@ -380,7 +502,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   Future<void> _loadStockMenu() async {
     if (stockmenu.isEmpty) setState(() => _isLoading = true);
     try {
-      final data = await StockMenuService.getMenusByCategoryAndWorkstation('', workstation);
+      final data = await StockMenuService.getMenusByCategoryAndWorkstation('', workstationType);
       if (mounted) {
         setState(() {
           stockmenu = data.menus;
@@ -431,12 +553,25 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     });
 
     try {
-      final ordersMap = (widget.barType == 'depan' || widget.barType == 'belakang')
-          ? await OrderService.refreshBarOrders(widget.barType!)
-          : await OrderService.refreshKitchenOrders();
+      if (kDebugMode) {
+        print('📡 Loading orders using workstation endpoint...');
+      }
+
+      final ordersMap = await OrderService.refreshWorkstationOrders(widget.selectedDevice);
       await _mergeOrdersWithAlertState(ordersMap, isInitialLoad: true);
-      if (mounted) setState(() => _isLoading = false);
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+
+        if (kDebugMode) {
+          print('✅ Orders loaded successfully');
+        }
+      }
     } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error loading orders: $e');
+      }
+
       if (mounted) {
         setState(() {
           _errorMessage = e.toString();
@@ -446,12 +581,15 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     }
   }
 
+  // ✅ UPDATED: Using new workstation endpoint
   Future<void> _refreshOrders() async {
     try {
-      final orderService = (widget.barType == 'depan' || widget.barType == 'belakang')
-          ? await OrderService.refreshBarOrders(widget.barType!)
-          : await OrderService.refreshKitchenOrders();
-      await _mergeOrdersWithAlertState(orderService);
+      if (kDebugMode) {
+        print('🔄 Refreshing orders for ${widget.selectedDevice.workstationTypeString}...');
+      }
+
+      final ordersMap = await OrderService.refreshWorkstationOrders(widget.selectedDevice);
+      await _mergeOrdersWithAlertState(ordersMap);
     } catch (e) {
       if (kDebugMode) print('❌ Error refreshing orders: $e');
     }
@@ -718,7 +856,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   void _navigateToCategories() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => UnifiedStockScreen(workstation: workstation)),
+      MaterialPageRoute(builder: (context) => UnifiedStockScreen(workstation: workstationType)),
     );
   }
 
@@ -984,31 +1122,27 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    final appBarColor = widget.barType == 'depan'
-        ? Colors.blue[700]
-        : widget.barType == 'belakang'
-        ? Colors.orange[700]
+    // ✅ UPDATED: Use device properties for theme colors
+    final appBarColor = widget.selectedDevice.shouldHandleBeverages
+        ? (widget.selectedDevice.location == 'depan' ? Colors.blue[700] : Colors.orange[700])
         : brandColor;
 
-    final titleText = widget.barType == 'depan'
-        ? 'Bar Depan'
-        : widget.barType == 'belakang'
-        ? 'Bar Belakang'
-        : 'Dapur Utama';
+    // ✅ UPDATED: Use device name for title
+    final titleText = displayHeader;
 
     return Scaffold(
       appBar: AppBar(
         elevation: 1,
         toolbarHeight: 70,
         backgroundColor: appBarColor,
-        automaticallyImplyLeading: false, // Hilangkan default back button
+        automaticallyImplyLeading: false,
         title: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
               child: Image.asset(
-                  '/images/Logo.jpg',
+                  '/images/RestaurantLogo.jpg',
                   height: 32,
                   errorBuilder: (_, __, ___) => const Icon(
                       Icons.restaurant,
@@ -1033,7 +1167,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                      titleText,
+                      '${widget.selectedDevice.outlet.name} • ${widget.selectedDevice.location}',
                       style: const TextStyle(
                           color: Colors.white70,
                           fontSize: 12,
@@ -1044,7 +1178,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
               ),
             ),
             _buildStatusBadge(),
-            _buildDeviceBadge(), // Tambahkan device badge
+            _buildDeviceBadge(),
             if (_printService.isConfigured) _buildPrinterStatusBadge(),
             if (_printService.isConfigured) _buildAutoPrintBadge(),
             if (_notificationService.queueLength > 0) _buildNotificationBadge(),
@@ -1054,7 +1188,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
             const SizedBox(width: 8),
             _buildIconButton(Icons.refresh, _isLoading ? null : _loadOrders, 'Refresh'),
             const SizedBox(width: 8),
-            _buildBackButton(), // Tambahkan back button
+            _buildBackButton(),
             const SizedBox(width: 8),
             _buildTimeBadge(),
           ],
@@ -1106,9 +1240,14 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
     );
   }
 
+  // ✅ UPDATED: Status badge based on device properties
   Widget _buildStatusBadge() {
-    final color = widget.barType == 'depan' ? Colors.blue : widget.barType == 'belakang' ? Colors.orange : Colors.green;
-    final text = widget.barType == 'depan' ? 'Depan' : widget.barType == 'belakang' ? 'Belakang' : 'Dapur';
+    final color = widget.selectedDevice.shouldHandleBeverages
+        ? (widget.selectedDevice.location == 'depan' ? Colors.blue : Colors.orange)
+        : Colors.green;
+    final text = widget.selectedDevice.shouldHandleBeverages
+        ? (widget.selectedDevice.location == 'depan' ? 'Bar Depan' : 'Bar Belakang')
+        : 'Dapur';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       margin: const EdgeInsets.only(right: 12),
@@ -1120,7 +1259,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(widget.barType == null ? Icons.restaurant : Icons.local_bar, size: 14, color: color[700]),
+          Icon(widget.selectedDevice.shouldHandleKitchen ? Icons.restaurant : Icons.local_bar, size: 14, color: color[700]),
           const SizedBox(width: 4),
           Text(text, style: TextStyle(color: color[900], fontSize: 11, fontWeight: FontWeight.w600)),
         ],
@@ -1236,6 +1375,7 @@ class _KitchenDashboardState extends State<KitchenDashboard> {
   }
 }
 
+// Keep the existing _PrinterSettingsDialog class unchanged
 class _PrinterSettingsDialog extends StatefulWidget {
   final ThermalPrintService printService;
   final bool autoPrintEnabled;

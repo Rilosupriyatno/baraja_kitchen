@@ -9,6 +9,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import '../models/order.dart';
+import '../models/device.dart';
 import 'package:intl/intl.dart';
 import 'print_tracking_service.dart';
 
@@ -39,10 +40,10 @@ class ThermalPrintService {
   int _consecutiveFailures = 0;
   DateTime? _lastFailureTime;
   static const int _maxRetries = 3;
-  // static const Duration _retryDelay = Duration(seconds: 2);
   static const Duration _connectionTimeout = Duration(seconds: 10);
 
-  String? _barType;
+  // ✅ NEW: Store Device reference instead of barType string
+  Device? _currentDevice;
   late SharedPreferences _prefs;
 
   Future<void> _initPreferences() async {
@@ -137,31 +138,46 @@ class ThermalPrintService {
     }
   }
 
-  void setBarType(String? barType) {
-    _barType = barType;
+  // ✅ NEW: Set device instead of barType
+  void setDevice(Device device) {
+    _currentDevice = device;
     if (kDebugMode) {
-      print('🖨️ [PRINT SERVICE] Bar Type set to: ${barType ?? "null (KITCHEN)"}');
-      print('🖨️ [PRINT SERVICE] Header: "$_workstationName"');
+      print('🖨️ [PRINT SERVICE] Device set:');
+      print('   Device Name: ${device.deviceName}');
+      print('   Workstation Type: ${device.workstationTypeString}');
+      print('   Display Name: ${device.workstationName}');
+      print('   Location: ${device.location}');
+      print('   Header: "$_workstationName"');
     }
   }
 
-  String get _workstationName {
+  // ✅ DEPRECATED: Keep for backward compatibility
+  @Deprecated('Use setDevice(Device) instead')
+  void setBarType(String? barType) {
     if (kDebugMode) {
-      print('🖨️ [GET WORKSTATION] _barType = $_barType');
+      print('⚠️ setBarType is deprecated. Please use setDevice() instead.');
+    }
+  }
+
+  // ✅ NEW: Get workstation name from Device
+  String get _workstationName {
+    if (_currentDevice != null) {
+      return _currentDevice!.workstationName;
     }
 
-    switch (_barType) {
-      case 'kitchen':
-        return 'KITCHEN';
-      case 'depan':
-        return 'BAR DEPAN';
-      case 'belakang':
-        return 'BAR BELAKANG';
-      case null:
-        return 'KITCHEN';
-      default:
-        return 'BAR';
+    // Fallback for backward compatibility
+    if (kDebugMode) {
+      print('⚠️ No device set, using default KITCHEN');
     }
+    return 'KITCHEN';
+  }
+
+  // ✅ NEW: Get workstation type string for API
+  String get _workstationType {
+    if (_currentDevice != null) {
+      return _currentDevice!.workstationTypeString;
+    }
+    return 'kitchen';
   }
 
   void configurePrinter(String ip, {int port = 9100}) {
@@ -324,6 +340,7 @@ class ThermalPrintService {
     _printedItemIds.clear();
     _orderItemsHistory.clear();
     _resetErrorTracking();
+    _currentDevice = null;
 
     if (kDebugMode) {
       print('🗑️ Printer configuration cleared');
@@ -334,17 +351,18 @@ class ThermalPrintService {
 // AUTO PRINT WITH ITEM TRACKING
 // ============================================
   Future<bool> autoPrintOrder(Order order, {bool isOpenBill = false}) async {
-    final workstation = _workstationName.toLowerCase().replaceAll(' ', '_');
+    final workstation = _workstationType;
 
     if (kDebugMode) {
       print('╔═══════════════════════════════════════╗');
       print('🖨️ [AUTO PRINT] Starting...');
       print('📝 Order ID: ${order.orderId}');
-      print('📍 _barType: $_barType');
+      print('📍 Device: ${_currentDevice?.deviceName ?? "Not Set"}');
+      print('📍 Workstation Type: $workstation');
       print('📍 Workstation Name: $_workstationName');
-      print('📍 Workstation Key: $workstation');
       print('╚═══════════════════════════════════════╝');
     }
+
     final printerConfig = {
       'type': _connectionType == PrinterConnectionType.wifi ? 'wifi' : 'bluetooth',
       'info': printerInfo,
@@ -366,8 +384,6 @@ class ThermalPrintService {
       return false;
     }
 
-    // ✅ SIMPLIFIED: Dashboard sudah filter items yang perlu diprint
-    // Jadi kita tinggal print semua items yang ada di order ini
     final itemsToPrint = order.items;
 
     if (itemsToPrint.isEmpty) {
@@ -379,7 +395,7 @@ class ThermalPrintService {
 
     if (kDebugMode) {
       print('🖨️ PRINTING ${itemsToPrint.length} items for order ${order.orderId}:');
-      if (isOpenBill) {  // ✅ TAMBAH LOG
+      if (isOpenBill) {
         print('   📌 OPEN BILL - Pesanan Tambahan');
       }
       for (final item in itemsToPrint) {
@@ -403,11 +419,9 @@ class ThermalPrintService {
 
     final startTime = DateTime.now();
     try {
-      // ✅ Pass isOpenBill flag ke method print
       final success = await _printOrderItems(order, itemsToPrint, isOpenBill: isOpenBill, logIds: logIds);
 
       if (success) {
-        // ✅ Mark items sebagai sudah diprint di internal tracking
         for (final item in itemsToPrint) {
           _printedItemIds.add(item.itemId);
         }
@@ -447,7 +461,6 @@ class ThermalPrintService {
     }
   }
 
-// 🔥 INSTANT PRINT: Zero delay, maximum speed
   Future<bool> _printViaWiFiItems(Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false}) async {
     if (_printerIp == null) return false;
     NetworkPrinter? printer;
@@ -457,7 +470,6 @@ class ThermalPrintService {
 
       if (kDebugMode) print('🔥 [INSTANT] Connecting to WiFi printer...');
 
-      // ✅ Reduced timeout: 3 seconds max
       final result = await printer.connect(_printerIp!, port: _printerPort)
           .timeout(const Duration(seconds: 3), onTimeout: () {
         throw Exception('Connection timeout');
@@ -469,11 +481,7 @@ class ThermalPrintService {
 
       if (kDebugMode) print('✅ [INSTANT] Connected - printing NOW');
 
-      // ✅ Generate receipt synchronously (no await)
       await _generateReceiptForItems(printer, order, itemsToPrint, isOpenBill: isOpenBill);
-
-      // ❌ REMOVED: Unnecessary delay
-      // await Future.delayed(const Duration(milliseconds: 500));
 
       printer.disconnect();
 
@@ -495,7 +503,6 @@ class ThermalPrintService {
     try {
       if (kDebugMode) print('🔥 [INSTANT] Connecting to Bluetooth...');
 
-      // ✅ Reduced timeout: 5 seconds max
       connection = await BluetoothConnection.toAddress(_bluetoothDevice!.address)
           .timeout(const Duration(seconds: 5), onTimeout: () {
         throw Exception('Bluetooth timeout');
@@ -513,13 +520,10 @@ class ThermalPrintService {
 
       if (kDebugMode) print('🔥 [INSTANT] Sending ${bytes.length} bytes to printer');
 
-      // ✅ Send data immediately
       connection.output.add(Uint8List.fromList(bytes));
 
-      // ✅ Reduced wait time: 10 seconds max
       await connection.output.allSent.timeout(const Duration(seconds: 10));
 
-      // ✅ Reduced post-print delay: 200ms instead of 800ms
       await Future.delayed(const Duration(milliseconds: 200));
 
       await connection.close();
@@ -535,7 +539,6 @@ class ThermalPrintService {
     }
   }
 
-// ✅ OPTIMIZED: Faster retry strategy
   Future<bool> _printOrderItems(Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false, int attempt = 1, List<String>? logIds}) async {
     try {
       if (kDebugMode) {
@@ -552,7 +555,6 @@ class ThermalPrintService {
       if (!success && attempt < _maxRetries) {
         if (kDebugMode) print('⏳ Quick retry in 1s...');
 
-        // ✅ Reduced retry delay: 1 second instead of 2
         await Future.delayed(const Duration(seconds: 1));
         return await _printOrderItems(order, itemsToPrint, isOpenBill: isOpenBill, attempt: attempt + 1, logIds: logIds);
       }
@@ -571,7 +573,6 @@ class ThermalPrintService {
     }
   }
 
-// ✅ OPTIMIZED: Prewarm with faster timeout
   Future<void> prewarmConnection() async {
     if (!isConfigured || !_autoPrintEnabled) return;
 
@@ -581,7 +582,6 @@ class ThermalPrintService {
       if (_connectionType == PrinterConnectionType.wifi && _printerIp != null) {
         final printer = NetworkPrinter(PaperSize.mm80, await CapabilityProfile.load());
 
-        // ✅ Reduced prewarm timeout: 3 seconds
         final result = await printer.connect(_printerIp!, port: _printerPort)
             .timeout(const Duration(seconds: 3));
 
@@ -597,13 +597,11 @@ class ThermalPrintService {
       print('⚠️ [PREWARM] Failed: $e (will retry on actual print)');
     }
   }
-  // ============================================
-  // GENERATE RECEIPT FOR SPECIFIC ITEMS
-  // ============================================
+
   Future<void> _generateReceiptForItems(NetworkPrinter printer, Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false}) async {
     if (kDebugMode) {
       print('🖨️ [GENERATE RECEIPT]');
-      print('   _barType: ${_barType ?? "null"}');
+      print('   Device: ${_currentDevice?.deviceName ?? "Not Set"}');
       print('   Workstation: "$_workstationName"');
       print('   Items: ${itemsToPrint.length}');
     }
@@ -672,16 +670,12 @@ class ThermalPrintService {
       printer.hr(ch: '-');
     }
 
-
-
     if (isOpenBill) {
       printer.text('ITEM TAMBAHAN:', styles: const PosStyles(bold: true, underline: true));
     } else {
       printer.text('PESANAN:', styles: const PosStyles(bold: true, underline: true));
     }
 
-
-    // ✅ PRINT ONLY SPECIFIC ITEMS
     for (var item in itemsToPrint) {
       final itemNameWithService = '${item.name} (${order.service}) x${item.qty}';
       printer.text(itemNameWithService, styles: const PosStyles(bold: true));
@@ -779,6 +773,7 @@ class ThermalPrintService {
 
     bytes.addAll(generator.hr());
     bytes.addAll(generator.emptyLines(1));
+
     if (isOpenBill) {
       bytes.addAll(generator.text('** PESANAN TAMBAHAN **',
           styles: const PosStyles(
@@ -790,7 +785,6 @@ class ThermalPrintService {
       bytes.addAll(generator.hr());
     }
 
-
     if (isOpenBill) {
       bytes.addAll(generator.text('ITEM TAMBAHAN:',
           styles: const PosStyles(bold: true, underline: true)));
@@ -800,7 +794,6 @@ class ThermalPrintService {
     }
     bytes.addAll(generator.emptyLines(1));
 
-    // ✅ PRINT ONLY SPECIFIC ITEMS
     for (var item in itemsToPrint) {
       final itemNameWithService = '${item.name} (${order.service}) x${item.qty}';
       bytes.addAll(generator.text(itemNameWithService, styles: const PosStyles(bold: true)));
@@ -850,7 +843,7 @@ class ThermalPrintService {
   // MANUAL PRINT (ALL ITEMS)
   // ============================================
   Future<bool> manualPrint(Order order) async {
-    final workstation = _workstationName.toLowerCase().replaceAll(' ', '_');
+    final workstation = _workstationType;
     final printerConfig = {
       'type': _connectionType == PrinterConnectionType.wifi ? 'wifi' : 'bluetooth',
       'info': printerInfo,
@@ -1321,24 +1314,6 @@ class ThermalPrintService {
       'mainCategory': item.mainCategory,
     };
   }
-
-  // bool _isItemForThisWorkstation(OrderItem item, String currentWorkstation) {
-  //   if (currentWorkstation == 'kitchen') {
-  //     return !_isBeverageItem(item);
-  //   } else if (currentWorkstation.contains('bar')) {
-  //     return _isBeverageItem(item);
-  //   }
-  //   return true;
-  // }
-
-  // bool _isBeverageItem(OrderItem item) {
-  //   final beverageKeywords = [
-  //     'minuman', 'drink', 'beverage', 'juice', 'soda', 'cola', 'tea', 'coffee',
-  //     'kopi', 'teh', 'jus', 'susu', 'air', 'water', 'bir', 'beer', 'wine', 'cocktail'
-  //   ];
-  //   final itemName = item.name.toLowerCase();
-  //   return beverageKeywords.any((keyword) => itemName.contains(keyword));
-  // }
 
   Future<Map<String, dynamic>> _checkItemStock(OrderItem item) async {
     try {

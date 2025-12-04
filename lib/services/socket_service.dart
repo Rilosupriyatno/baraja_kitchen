@@ -1,25 +1,38 @@
-// services/socket_service.dart - COMPLETE VERSION
-
+// services/socket_service.dart (UPDATED - Device-Based Socket Events)
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/order.dart';
+import '../models/device.dart';
 import 'order_service.dart';
+import 'package:flutter/foundation.dart';
 
 class SocketService {
   static IO.Socket? _socket;
-  static String? _currentBarType;
+  static Device? _currentDevice;
 
-  /// Connect to backend socket.io with immediate print support
+  /// ✅ Connect with Device object
   static void connect({
     required String outletId,
-    String? barType,
+    required Device device,
     Function(Order)? onNewOrder,
     Function(Map<String, dynamic>)? onBeverageOrder,
     Function(Map<String, dynamic>)? onStockUpdate,
     Function(Map<String, dynamic>)? onImmediatePrint,
   }) {
     final baseUrl = dotenv.env['BASE_URL'] ?? 'http://localhost:3000';
-    _currentBarType = barType;
+    _currentDevice = device;
+
+    if (kDebugMode) {
+      print('╔════════════════════════════════════════════════╗');
+      print('📡 SOCKET SERVICE INITIALIZATION');
+      print('╠════════════════════════════════════════════════╣');
+      print('   Device: ${device.deviceName}');
+      print('   Device ID: ${device.deviceId}');
+      print('   Outlet: ${outletId}');
+      print('   Workstation: ${device.workstationTypeString}');
+      print('   Location: ${device.location}');
+      print('╚════════════════════════════════════════════════╝');
+    }
 
     _socket = IO.io(
       baseUrl,
@@ -33,16 +46,28 @@ class SocketService {
     );
 
     _socket!.onConnect((_) {
-      print('✅ Socket connected: ${_socket!.id}');
+      if (kDebugMode) {
+        print('✅ Socket connected: ${_socket!.id}');
+      }
 
-      // Join kitchen room
+      // Join kitchen room (all devices)
       _socket!.emit('join_kitchen_room', outletId);
-      print('✅ Joined kitchen_room for outlet: $outletId');
+      if (kDebugMode) {
+        print('✅ Joined kitchen_room for outlet: $outletId');
+      }
 
-      // Join bar room if specified
-      if (_currentBarType != null && _currentBarType!.isNotEmpty) {
-        _socket!.emit('join_bar_room', _currentBarType!);
-        print('✅ Joined bar room: bar_$_currentBarType');
+      // Join bar room if device handles beverages
+      if (device.shouldHandleBeverages && device.location.isNotEmpty) {
+        _socket!.emit('join_bar_room', device.location);
+        if (kDebugMode) {
+          print('✅ Joined bar room: bar_${device.location}');
+        }
+      }
+
+      // Join cashier room (for order updates)
+      _socket!.emit('join_cashier_room', {'outletId': outletId});
+      if (kDebugMode) {
+        print('✅ Joined cashier_room');
       }
     });
 
@@ -51,9 +76,35 @@ class SocketService {
     // ============================================
 
     _socket!.on('kitchen_immediate_print', (data) {
-      print('🔥 [KITCHEN] Immediate print received at: ${DateTime.now()}');
-      print('   Order ID: ${data['orderId']}');
-      print('   Items: ${data['orderItems']?.length ?? 0}');
+      if (kDebugMode) {
+        print('╔════════════════════════════════════════════════╗');
+        print('🔥 [KITCHEN] Immediate print received');
+        print('╠════════════════════════════════════════════════╣');
+        print('   Time: ${DateTime.now()}');
+        print('   Order ID: ${data['orderId']}');
+        print('   Items: ${data['orderItems']?.length ?? 0}');
+        print('   Target Device: ${data['targetDevice']}');
+        print('   Backend Device ID: ${data['deviceId']}');
+        print('   This Device ID: ${device.deviceId}');
+        print('╚════════════════════════════════════════════════╝');
+      }
+
+      // ✅ CRITICAL: Check device ID match
+      final targetDeviceId = data['deviceId'] as String?;
+      if (targetDeviceId != null && targetDeviceId.isNotEmpty) {
+        if (device.deviceId != targetDeviceId) {
+          if (kDebugMode) {
+            print('⏭️ [${device.deviceName}] SKIPPING - Not target device');
+            print('   Target: $targetDeviceId');
+            print('   This: ${device.deviceId}');
+          }
+          return;
+        }
+
+        if (kDebugMode) {
+          print('✅ [${device.deviceName}] Device ID MATCH - Processing print');
+        }
+      }
 
       if (onImmediatePrint != null) {
         onImmediatePrint(Map<String, dynamic>.from(data));
@@ -61,9 +112,35 @@ class SocketService {
     });
 
     _socket!.on('beverage_immediate_print', (data) {
-      print('🔥 [BEVERAGE] Immediate print received at: ${DateTime.now()}');
-      print('   Order ID: ${data['orderId']}');
-      print('   Items: ${data['orderItems']?.length ?? 0}');
+      if (kDebugMode) {
+        print('╔════════════════════════════════════════════════╗');
+        print('🔥 [BEVERAGE] Immediate print received');
+        print('╠════════════════════════════════════════════════╣');
+        print('   Time: ${DateTime.now()}');
+        print('   Order ID: ${data['orderId']}');
+        print('   Items: ${data['orderItems']?.length ?? 0}');
+        print('   Target Device: ${data['targetDevice']}');
+        print('   Backend Device ID: ${data['deviceId']}');
+        print('   This Device ID: ${device.deviceId}');
+        print('╚════════════════════════════════════════════════╝');
+      }
+
+      // ✅ CRITICAL: Check device ID match
+      final targetDeviceId = data['deviceId'] as String?;
+      if (targetDeviceId != null && targetDeviceId.isNotEmpty) {
+        if (device.deviceId != targetDeviceId) {
+          if (kDebugMode) {
+            print('⏭️ [${device.deviceName}] SKIPPING - Not target device');
+            print('   Target: $targetDeviceId');
+            print('   This: ${device.deviceId}');
+          }
+          return;
+        }
+
+        if (kDebugMode) {
+          print('✅ [${device.deviceName}] Device ID MATCH - Processing print');
+        }
+      }
 
       if (onImmediatePrint != null) {
         onImmediatePrint(Map<String, dynamic>.from(data));
@@ -75,14 +152,18 @@ class SocketService {
     // ============================================
 
     _socket!.on('stock_updated', (data) {
-      print('📦 Stock updated event: $data');
+      if (kDebugMode) {
+        print('📦 Stock updated event: ${data['menuItemId']}');
+      }
       if (onStockUpdate != null) {
         onStockUpdate(Map<String, dynamic>.from(data));
       }
     });
 
     _socket!.on('stock_calibrated', (data) {
-      print('🔄 Stock calibrated event: $data');
+      if (kDebugMode) {
+        print('🔄 Stock calibrated event: ${data['menuItemId']}');
+      }
       if (onStockUpdate != null) {
         onStockUpdate(Map<String, dynamic>.from(data));
       }
@@ -93,20 +174,27 @@ class SocketService {
     // ============================================
 
     _socket!.on('new_order', (data) async {
-      print('🔥 New order event: $data');
+      if (kDebugMode) {
+        print('🔥 New order event received');
+      }
 
       try {
-        final orders = await OrderService.getKitchenOrders();
+        // ✅ Use new workstation endpoint
+        final orders = await OrderService.getWorkstationOrders(device);
         if (onNewOrder != null && orders.isNotEmpty) {
           onNewOrder(orders.first);
         }
       } catch (e) {
-        print('⚠️ Error handling new order: $e');
+        if (kDebugMode) {
+          print('⚠️ Error handling new order: $e');
+        }
       }
     });
 
     _socket!.on('beverage_order_received', (data) {
-      print('🥤 Beverage order received: $data');
+      if (kDebugMode) {
+        print('🥤 Beverage order received: ${data['orderId']}');
+      }
 
       if (onBeverageOrder != null) {
         onBeverageOrder(Map<String, dynamic>.from(data));
@@ -114,7 +202,9 @@ class SocketService {
     });
 
     _socket!.on('area_order_update', (data) {
-      print('📍 Area order update: $data');
+      if (kDebugMode) {
+        print('📍 Area order update: ${data['orderId']} - ${data['status']}');
+      }
     });
 
     // ============================================
@@ -122,11 +212,31 @@ class SocketService {
     // ============================================
 
     _socket!.on('status_confirmed', (data) {
-      print('✅ Order status confirmed: ${data['order_id']} -> ${data['orderStatus']}');
+      if (kDebugMode) {
+        print('✅ Order status confirmed: ${data['order_id']} -> ${data['orderStatus']}');
+      }
     });
 
     _socket!.on('order_status_updated', (data) {
-      print('🔄 Order status updated: $data');
+      if (kDebugMode) {
+        print('🔄 Order status updated: ${data['orderId']} -> ${data['status']}');
+      }
+    });
+
+    _socket!.on('workstation_order_updated', (data) {
+      if (kDebugMode) {
+        print('🔄 Workstation order updated: ${data['order_id']}');
+        print('   Status: ${data['orderStatus']}');
+        print('   Workstation: ${data['workstation']?['type']}');
+      }
+    });
+
+    _socket!.on('workstation_item_updated', (data) {
+      if (kDebugMode) {
+        print('🔄 Workstation item updated: ${data['item_id']}');
+        print('   Order: ${data['order_id']}');
+        print('   Status: ${data['status']}');
+      }
     });
 
     // ============================================
@@ -134,57 +244,77 @@ class SocketService {
     // ============================================
 
     _socket!.onDisconnect((_) {
-      print('❌ Socket disconnected');
+      if (kDebugMode) {
+        print('❌ Socket disconnected');
+      }
     });
 
     _socket!.onError((error) {
-      print('❌ Socket error: $error');
+      if (kDebugMode) {
+        print('❌ Socket error: $error');
+      }
     });
 
     _socket!.onReconnect((_) {
-      print('🔄 Socket reconnected');
+      if (kDebugMode) {
+        print('🔄 Socket reconnected - Rejoining rooms...');
+      }
 
       // Rejoin rooms after reconnect
       _socket!.emit('join_kitchen_room', outletId);
 
-      if (_currentBarType != null && _currentBarType!.isNotEmpty) {
-        _socket!.emit('join_bar_room', _currentBarType!);
+      if (_currentDevice?.shouldHandleBeverages == true &&
+          _currentDevice!.location.isNotEmpty) {
+        _socket!.emit('join_bar_room', _currentDevice!.location);
+      }
+
+      _socket!.emit('join_cashier_room', {'outletId': outletId});
+
+      if (kDebugMode) {
+        print('✅ Rejoined all rooms after reconnection');
       }
     });
 
-    print('🔌 Socket service initialized');
+    if (kDebugMode) {
+      print('📌 Socket service initialized for: ${device.deviceName}');
+    }
   }
 
   // ============================================
   // BAR ROOM MANAGEMENT
   // ============================================
 
-  static void joinBarRoom(String barType) {
+  static void joinBarRoom(String barLocation) {
     if (_socket?.connected == true) {
-      _socket!.emit('join_bar_room', barType);
-      print('✅ Joined bar room: $barType');
-      _currentBarType = barType;
+      _socket!.emit('join_bar_room', barLocation);
+      if (kDebugMode) {
+        print('✅ Joined bar room: $barLocation');
+      }
     }
   }
 
-  static void leaveBarRoom() {
-    if (_socket?.connected == true && _currentBarType != null) {
-      _socket!.emit('leave_room', 'bar_$_currentBarType');
-      print('👋 Left bar room: $_currentBarType');
-      _currentBarType = null;
+  static void leaveBarRoom(String barLocation) {
+    if (_socket?.connected == true) {
+      _socket!.emit('leave_room', 'bar_$barLocation');
+      if (kDebugMode) {
+        print('👋 Left bar room: $barLocation');
+      }
     }
   }
 
-  static void switchBarRoom(String newBarType) {
+  static void switchBarRoom(String oldLocation, String newLocation) {
     if (_socket?.connected == true) {
-      if (_currentBarType != null) {
-        _socket!.emit('leave_room', 'bar_$_currentBarType');
-        print('👋 Left bar room: $_currentBarType');
+      if (oldLocation.isNotEmpty) {
+        _socket!.emit('leave_room', 'bar_$oldLocation');
+        if (kDebugMode) {
+          print('👋 Left bar room: $oldLocation');
+        }
       }
 
-      _socket!.emit('join_bar_room', newBarType);
-      print('✅ Switched to bar room: $newBarType');
-      _currentBarType = newBarType;
+      _socket!.emit('join_bar_room', newLocation);
+      if (kDebugMode) {
+        print('✅ Switched to bar room: $newLocation');
+      }
     }
   }
 
@@ -205,7 +335,9 @@ class SocketService {
         'bartenderName': bartenderName,
         'items': items,
       });
-      print('📤 Bar order start sent: $orderId');
+      if (kDebugMode) {
+        print('📤 Bar order start sent: $orderId');
+      }
     }
   }
 
@@ -220,7 +352,9 @@ class SocketService {
         'tableNumber': tableNumber,
         'bartenderName': bartenderName,
       });
-      print('✅ Bar order complete sent: $orderId');
+      if (kDebugMode) {
+        print('✅ Bar order complete sent: $orderId');
+      }
     }
   }
 
@@ -228,12 +362,20 @@ class SocketService {
   // UTILITY METHODS
   // ============================================
 
-  static String? getCurrentBarType() {
-    return _currentBarType;
+  static Device? getCurrentDevice() {
+    return _currentDevice;
   }
 
-  static bool isConnectedToBar(String barType) {
-    return _currentBarType == barType;
+  static String? getCurrentBarLocation() {
+    if (_currentDevice?.shouldHandleBeverages == true) {
+      return _currentDevice!.location;
+    }
+    return null;
+  }
+
+  static bool isConnectedToBar(String barLocation) {
+    return _currentDevice?.shouldHandleBeverages == true &&
+        _currentDevice!.location == barLocation;
   }
 
   static bool get isConnected {
@@ -244,8 +386,36 @@ class SocketService {
     if (_socket != null) {
       _socket!.disconnect();
       _socket = null;
-      _currentBarType = null;
-      print('👋 Socket disconnected');
+      _currentDevice = null;
+      if (kDebugMode) {
+        print('👋 Socket disconnected');
+      }
+    }
+  }
+
+  // ============================================
+  // DEBUG HELPERS
+  // ============================================
+
+  static void printDeviceInfo() {
+    if (_currentDevice == null) {
+      if (kDebugMode) {
+        print('⚠️ No device connected');
+      }
+      return;
+    }
+
+    if (kDebugMode) {
+      print('╔════════════════════════════════════════════════╗');
+      print('📱 CURRENT DEVICE INFO');
+      print('╠════════════════════════════════════════════════╣');
+      print('   Device Name: ${_currentDevice!.deviceName}');
+      print('   Device ID: ${_currentDevice!.deviceId}');
+      print('   Workstation: ${_currentDevice!.workstationTypeString}');
+      print('   Location: ${_currentDevice!.location}');
+      print('   Socket Connected: ${_socket?.connected ?? false}');
+      print('   Socket ID: ${_socket?.id ?? 'N/A'}');
+      print('╚════════════════════════════════════════════════╝');
     }
   }
 }

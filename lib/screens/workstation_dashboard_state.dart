@@ -1,4 +1,4 @@
-// screens/kitchen_dashboard_state.dart
+// screens/workstation_dashboard_state.dart
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../models/order.dart';
@@ -9,7 +9,7 @@ import '../services/notification_service.dart';
 import '../services/thermal_print_service.dart';
 
 /// Mixin untuk mengelola state KitchenDashboard
-mixin KitchenDashboardState {
+mixin WorkstationDashboardState {
   static const Color brandColor = Color(0xFF077A4B);
 
   // Lists
