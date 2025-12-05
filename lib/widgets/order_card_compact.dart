@@ -50,6 +50,20 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
     return brandColor.withOpacity(0.1);
   }
 
+  String _formatTime(DateTime dateTime) {
+    // Format: "08 Nov, 14:30"
+    List<String> months = ['Januari', 'Febuari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+    String day = dateTime.day.toString().padLeft(2, '0');
+    String month = months[dateTime.month - 1];
+    String year = dateTime.year.toString();
+    String hour = dateTime.hour.toString().padLeft(2, '0');
+    String minute = dateTime.minute.toString().padLeft(2, '0');
+
+    return '$day $month $year, $hour:$minute';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -57,19 +71,13 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeader(),
-          if (widget.isExpanded) _buildExpandedContent(),
+          // if (widget.isExpanded)
+            _buildExpandedContent(),
         ],
       ),
     );
@@ -77,16 +85,11 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
 
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: widget.isExpanded
             ? const BorderRadius.vertical(top: Radius.circular(12))
-            : BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.grey.shade200,
-          width: 1,
-        ),
+            : BorderRadius.circular(12)
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -126,13 +129,44 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      widget.order.orderId ?? 'N/A',
-                      style: const TextStyle(
-                        color: Colors.black87,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          '${widget.order.orderId ?? 'N/A'} -',
+                          style: const TextStyle(
+                            color: Colors.black87,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _badgeColor,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: _cardColor.withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min, // Ini yang bikin pas sesuai konten
+                            children: [
+                              Icon(Icons.person_outline, size: 14, color: _cardColor),
+                              const SizedBox(width: 4),
+                              Text(
+                                widget.order.name,
+                                style: TextStyle(
+                                  color: _cardColor,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 6),
                     Container(
@@ -157,6 +191,38 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                   ],
                 ),
               ),
+
+              if (widget.order.table.isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: brandColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: brandColor.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.table_restaurant, size: 16, color: brandColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        widget.order.table,
+                        style: TextStyle(
+                          color: brandColor,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const SizedBox(width: 16),
+
               // Tombol Print di header (selalu visible)
               if (widget.onReprint != null)
                 Container(
@@ -177,6 +243,7 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                 ),
             ],
           ),
+
           const SizedBox(height: 16),
 
           if (widget.order.service.contains('Reservation') &&
@@ -249,88 +316,7 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
             ),
           ],
 
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Icon(Icons.person_outline, size: 16, color: Colors.grey.shade600),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  widget.order.name,
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              if (widget.order.table.isNotEmpty) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: brandColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: brandColor.withOpacity(0.3),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.table_restaurant, size: 12, color: brandColor),
-                      const SizedBox(width: 4),
-                      Text(
-                        widget.order.table,
-                        style: TextStyle(
-                          color: brandColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-
-          if (widget.showTimer && !widget.isExpanded) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: _badgeColor,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: _cardColor.withOpacity(0.3),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.access_time,
-                    color: _cardColor,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'waktu pesanan ${widget.order.remainingText()}',
-                    style: TextStyle(
-                      color: _cardColor,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
 
           if (!widget.order.service.contains('Reservation')) ...[
             Row(
@@ -338,10 +324,9 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(
-                      color: Colors.grey.shade300,
+                      color: Colors.yellow.shade300,
                       width: 1,
                     ),
                   ),
@@ -349,58 +334,17 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        widget.order.source == 'App' ? Icons.phone_android :
-                        widget.order.source == 'Web' ? Icons.language :
-                        Icons.point_of_sale,
+                        Icons.timer,
                         size: 12,
-                        color: Colors.grey.shade600,
+                        color: Colors.yellow.shade700,
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        widget.order.source,
+                          widget.order.updatedAtWIB != null
+                          ? _formatTime(widget.order.updatedAtWIB!)
+                              : '-',
                         style: TextStyle(
-                          color: Colors.grey.shade700,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: widget.order.paymentMethod == 'Cash'
-                        ? Colors.green.shade50
-                        : Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: widget.order.paymentMethod == 'Cash'
-                          ? Colors.green.shade300
-                          : Colors.blue.shade300,
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        widget.order.paymentMethod == 'Cash'
-                            ? Icons.payments
-                            : Icons.credit_card,
-                        size: 12,
-                        color: widget.order.paymentMethod == 'Cash'
-                            ? Colors.green.shade700
-                            : Colors.blue.shade700,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        widget.order.paymentMethod,
-                        style: TextStyle(
-                          color: widget.order.paymentMethod == 'Cash'
-                              ? Colors.green.shade900
-                              : Colors.blue.shade900,
+                          color: Colors.yellow.shade900,
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                         ),
@@ -410,40 +354,7 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
           ],
-
-          SizedBox(
-            width: double.infinity,
-            height: 44,
-            child: OutlinedButton(
-              onPressed: widget.onToggleExpand,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: brandColor,
-                side: BorderSide(color: brandColor.withOpacity(0.3)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    widget.isExpanded ? 'Tutup Detail' : 'Lihat Detail',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    widget.isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                    size: 20,
-                  ),
-                ],
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -451,202 +362,178 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
 
   Widget _buildExpandedContent() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.only(top: 20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
-        border: Border(
-          left: BorderSide(color: Colors.grey.shade200, width: 1),
-          right: BorderSide(color: Colors.grey.shade200, width: 1),
-          bottom: BorderSide(color: Colors.grey.shade200, width: 1),
-        ),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12))
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Divider(color: Colors.grey.shade200, height: 1),
-          const SizedBox(height: 20),
+          const SizedBox(height: 8),
 
-          Row(
-            children: [
-              Icon(
-                Icons.restaurant_menu,
-                color: brandColor,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'Detail Pesanan',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
+          Column(
+            children: widget.order.items.asMap().entries.map((entry) {
+              final index = entry.key;
+              final item = entry.value;
+              final isChecked = _checkedItems['${widget.order.orderId}_$index'] ?? false;
+
+              final List<String> extras = [];
+              if (item.addons != null && item.addons!.isNotEmpty) {
+                for (var addon in item.addons!) {
+                  String addonName = addon['name'] ?? '';
+                  if (addon['options'] != null) {
+                    for (var option in addon['options']) {
+                      extras.add('$addonName - ${option['label'] ?? ''}');
+                    }
+                  }
+                }
+              }
+              if (item.toppings != null && item.toppings!.isNotEmpty) {
+                for (var addon in item.toppings!) {
+                  String addonName = addon['name'] ?? '';
+                  if (addon['options'] != null) {
+                    for (var option in addon['options']) {
+                      extras.add('$addonName - ${option['label'] ?? ''}');
+                    }
+                  }
+                }
+              }
+
+              return Container(
+                margin: EdgeInsets.only(
+                  bottom: index < widget.order.items.length - 1 ? 12 : 0,
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: Column(
-              children: widget.order.items.asMap().entries.map((entry) {
-                final index = entry.key;
-                final item = entry.value;
-                final isChecked = _checkedItems['${widget.order.orderId}_$index'] ?? false;
-
-                final List<String> extras = [];
-                if (item.addons != null && item.addons!.isNotEmpty) {
-                  for (var addon in item.addons!) {
-                    extras.add(addon['name'] ?? '');
-                  }
-                }
-                if (item.toppings != null && item.toppings!.isNotEmpty) {
-                  for (var topping in item.toppings!) {
-                    extras.add(topping['name'] ?? '');
-                  }
-                }
-
-                return Container(
-                  margin: EdgeInsets.only(
-                    bottom: index < widget.order.items.length - 1 ? 12 : 0,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isChecked ? brandColor.withOpacity(0.5) : Colors.grey.shade200,
+                    width: 1,
                   ),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isChecked ? brandColor.withOpacity(0.5) : Colors.grey.shade200,
-                      width: 1,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          if (widget.showTimer && !widget.isFinished)
-                            Container(
-                              margin: const EdgeInsets.only(right: 12),
-                              child: Checkbox(
-                                value: isChecked,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _checkedItems['${widget.order.orderId}_$index'] = value ?? false;
-                                  });
-                                },
-                                fillColor: MaterialStateProperty.resolveWith((states) {
-                                  if (states.contains(MaterialState.selected)) {
-                                    return brandColor;
-                                  }
-                                  return Colors.white;
-                                }),
-                                checkColor: Colors.white,
-                                side: BorderSide(
-                                  color: Colors.grey.shade400,
-                                  width: 1.5,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        if (widget.showTimer && !widget.isFinished)
+                          Container(
+                            margin: const EdgeInsets.only(right: 12),
+                            child: Checkbox(
+                              value: isChecked,
+                              onChanged: (value) {
+                                setState(() {
+                                  _checkedItems['${widget.order.orderId}_$index'] = value ?? false;
+                                });
+                              },
+                              fillColor: MaterialStateProperty.resolveWith((states) {
+                                if (states.contains(MaterialState.selected)) {
+                                  return brandColor;
+                                }
+                                return Colors.white;
+                              }),
+                              checkColor: Colors.white,
+                              side: BorderSide(
+                                color: Colors.grey.shade400,
+                                width: 1.5,
                               ),
-                            ),
-                          Expanded(
-                            child: Text(
-                              '${item.name} ${item.qty}x',
-                              style: TextStyle(
-                                color: isChecked ? Colors.grey.shade400 : Colors.black87,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                decoration: isChecked ? TextDecoration.lineThrough : null,
-                                decorationThickness: 2,
-                              ),
-                            ),
-                          ),
-                          if (isChecked)
-                            Icon(
-                              Icons.check_circle,
-                              color: brandColor,
-                              size: 18,
-                            ),
-                        ],
-                      ),
-
-                      if (extras.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: extras.map((extra) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: brandColor.withOpacity(0.08),
+                              shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: brandColor.withOpacity(0.2),
-                                  width: 1,
-                                ),
                               ),
-                              child: Text(
-                                extra,
-                                style: TextStyle(
-                                  color: brandColor,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ],
-
-                      if (item.notes != null && item.notes!.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.shade50,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: Colors.orange.shade200,
-                              width: 1,
                             ),
                           ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(
-                                Icons.chat_bubble_outline,
-                                size: 14,
-                                color: Colors.orange.shade700,
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  item.notes!,
-                                  style: TextStyle(
-                                    color: Colors.orange.shade900,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                              ),
-                            ],
+                        Expanded(
+                          child: Text(
+                            '${item.name} ${item.qty}x',
+                            style: TextStyle(
+                              color: isChecked ? Colors.grey.shade400 : Colors.black87,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              decoration: isChecked ? TextDecoration.lineThrough : null,
+                              decorationThickness: 2,
+                            ),
                           ),
                         ),
+                        if (isChecked)
+                          Icon(
+                            Icons.check_circle,
+                            color: brandColor,
+                            size: 18,
+                          ),
                       ],
+                    ),
+
+                    if (extras.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: extras.map((extra) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: brandColor.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: brandColor.withOpacity(0.2),
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              extra,
+                              style: TextStyle(
+                                color: brandColor,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
                     ],
-                  ),
-                );
-              }).toList(),
-            ),
+
+                    if (item.notes != null && item.notes!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: Colors.orange.shade200,
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.chat_bubble_outline,
+                              size: 14,
+                              color: Colors.orange.shade700,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                item.notes!,
+                                style: TextStyle(
+                                  color: Colors.orange.shade900,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }).toList(),
           ),
 
           if (widget.order.service.contains('Reservation') &&
@@ -792,18 +679,6 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
 
             const SizedBox(height: 16),
 
-            Row(
-              children: [
-                Expanded(child: _buildTimeButton('+5 menit', 5)),
-                const SizedBox(width: 8),
-                Expanded(child: _buildTimeButton('+10 menit', 10)),
-                const SizedBox(width: 8),
-                Expanded(child: _buildTimeButton('+15 menit', 15)),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
             SizedBox(
               width: double.infinity,
               height: 50,
@@ -838,29 +713,29 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
       ),
     );
   }
-
-  Widget _buildTimeButton(String label, int minutes) {
-    return OutlinedButton(
-      onPressed: () {
-        if (widget.onAddTime != null) {
-          widget.onAddTime!(widget.order, minutes);
-        }
-      },
-      style: OutlinedButton.styleFrom(
-        foregroundColor: brandColor,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        side: BorderSide(color: brandColor.withOpacity(0.3)),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
+  //
+  // Widget _buildTimeButton(String label, int minutes) {
+  //   return OutlinedButton(
+  //     onPressed: () {
+  //       if (widget.onAddTime != null) {
+  //         widget.onAddTime!(widget.order, minutes);
+  //       }
+  //     },
+  //     style: OutlinedButton.styleFrom(
+  //       foregroundColor: brandColor,
+  //       padding: const EdgeInsets.symmetric(vertical: 12),
+  //       side: BorderSide(color: brandColor.withOpacity(0.3)),
+  //       shape: RoundedRectangleBorder(
+  //         borderRadius: BorderRadius.circular(8),
+  //       ),
+  //     ),
+  //     child: Text(
+  //       label,
+  //       style: const TextStyle(
+  //         fontSize: 13,
+  //         fontWeight: FontWeight.w600,
+  //       ),
+  //     ),
+  //   );
+  // }
 }

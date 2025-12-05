@@ -6,6 +6,13 @@ class OrderItem {
   final List<Map<String, dynamic>>? toppings;
   final String? notes;
   final String itemId;
+  final String? menuItemId;
+  final double? subtotal;
+  final String? kitchenStatus;
+  final bool? isPrinted;
+  final String? dineType;
+  final String? workstation; // ✅ Added workstation field
+  final String? mainCategory; // ✅ Added mainCategory field
 
   OrderItem({
     required this.name,
@@ -14,11 +21,40 @@ class OrderItem {
     this.toppings,
     this.notes,
     required this.itemId,
+    this.menuItemId,
+    this.subtotal,
+    this.kitchenStatus,
+    this.isPrinted,
+    this.dineType,
+    this.workstation,
+    this.mainCategory,
   });
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
+    // Handle menuItem data structure
+    String itemName = '';
+    String? menuItemId;
+    String? workstation;
+    String? mainCategory;
+
+    if (json['menuItem'] != null) {
+      if (json['menuItem'] is Map) {
+        itemName = json['menuItem']['name'] ?? '';
+        menuItemId = json['menuItem']['_id']?.toString();
+        workstation = json['menuItem']['workstation']?.toString();
+        mainCategory = json['menuItem']['mainCategory']?.toString();
+      } else if (json['menuItem'] is String) {
+        itemName = json['menuItem'];
+      }
+    }
+
+    // Fallback to name field if menuItem is not available
+    if (itemName.isEmpty) {
+      itemName = json['name'] ?? '';
+    }
+
     return OrderItem(
-      name: json['menuItem']?['name'] ?? '',
+      name: itemName,
       qty: json['quantity'] ?? 1,
       addons: json['addons'] != null
           ? List<Map<String, dynamic>>.from(json['addons'])
@@ -27,8 +63,84 @@ class OrderItem {
           ? List<Map<String, dynamic>>.from(json['toppings'])
           : null,
       notes: json['notes'],
-      itemId: json['_id'] ?? '',
+      itemId: json['_id']?.toString() ?? '',
+      menuItemId: menuItemId,
+      subtotal: (json['subtotal'] ?? 0).toDouble(),
+      kitchenStatus: json['kitchenStatus'],
+      isPrinted: json['isPrinted'] ?? false,
+      dineType: json['dineType'],
+      workstation: workstation,
+      mainCategory: mainCategory,
     );
+  }
+
+  // ✅ Helper method to check if this is a kitchen item (makanan)
+  bool get isKitchenItem {
+    // Priority 1: Check workstation
+    if (workstation != null) {
+      return workstation == 'kitchen';
+    }
+
+    // Priority 2: Check mainCategory
+    if (mainCategory != null) {
+      return mainCategory == 'makanan';
+    }
+
+    // Priority 3: Check by name as fallback
+    final nameLower = name.toLowerCase();
+    return !nameLower.contains('jus') &&
+        !nameLower.contains('soda') &&
+        !nameLower.contains('kopi') &&
+        !nameLower.contains('teh') &&
+        !nameLower.contains('air') &&
+        !nameLower.contains('mocktail') &&
+        !nameLower.contains('cocktail') &&
+        !nameLower.contains('bir') &&
+        !nameLower.contains('wine') &&
+        !nameLower.contains('minuman') &&
+        !nameLower.contains('soft drink') &&
+        !nameLower.contains('es') &&
+        !nameLower.contains('ice');
+  }
+
+  // ✅ Helper method to check if this is a bar item (minuman)
+  bool get isBarItem {
+    // Priority 1: Check workstation
+    if (workstation != null) {
+      return workstation == 'bar';
+    }
+
+    // Priority 2: Check mainCategory
+    if (mainCategory != null) {
+      return mainCategory == 'minuman';
+    }
+
+    // Priority 3: Check by name as fallback
+    final nameLower = name.toLowerCase();
+    return nameLower.contains('jus') ||
+        nameLower.contains('soda') ||
+        nameLower.contains('kopi') ||
+        nameLower.contains('teh') ||
+        nameLower.contains('air') ||
+        nameLower.contains('mocktail') ||
+        nameLower.contains('cocktail') ||
+        nameLower.contains('bir') ||
+        nameLower.contains('wine') ||
+        nameLower.contains('minuman') ||
+        nameLower.contains('soft drink') ||
+        nameLower.contains('es') ||
+        nameLower.contains('ice');
+  }
+
+  // ✅ Get workstation with priority
+  String get resolvedWorkstation {
+    if (workstation != null) {
+      return workstation!;
+    }
+    if (mainCategory != null) {
+      return mainCategory == 'makanan' ? 'kitchen' : 'bar';
+    }
+    return isKitchenItem ? 'kitchen' : 'bar';
   }
 }
 
@@ -41,12 +153,23 @@ class Order {
   final String paymentMethod;
   final List<OrderItem> items;
   final String? orderType;
+  DateTime? createdAt;
   DateTime? updatedAt;
+  DateTime? createdAtWIB;
+  DateTime? updatedAtWIB;
   final String? reservationDate;
   final String? reservationTime;
-  final DateTime? reservationDateTime; // ✅ Full datetime untuk perhitungan
+  final DateTime? reservationDateTime;
   late final String status;
-  final Map<String, dynamic>? reservationData; // ✅ Simpan full reservation data
+  final Map<String, dynamic>? reservationData;
+  final double? totalPrice;
+  final String? outletId;
+  final String? cashierId;
+  final String? userId;
+
+  // 🆕 Tambahan untuk serving option
+  final String? servingOption;
+  final DateTime? foodServingTime;
 
   Order({
     this.orderId,
@@ -56,40 +179,93 @@ class Order {
     required this.source,
     required this.paymentMethod,
     required this.items,
+    this.createdAt,
     this.updatedAt,
+    this.createdAtWIB,
+    this.updatedAtWIB,
     this.orderType,
     this.reservationDate,
     this.reservationTime,
     this.reservationDateTime,
     required this.status,
     this.reservationData,
+    this.totalPrice,
+    this.outletId,
+    this.cashierId,
+    this.userId,
+    this.servingOption,
+    this.foodServingTime,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
+    // Parse items
     final itemsList = (json['items'] as List? ?? [])
         .map((item) => OrderItem.fromJson(item))
         .toList();
 
+    // Determine service type
     String serviceType = json['orderType'] ?? 'Dine-In';
-
     if (json['orderType'] == 'Reservation') {
       serviceType = 'Reservation';
     }
 
     // Parse table number
     String tableNum = json['tableNumber'] ?? '';
-    if (tableNum.isEmpty && json['orderType'] == 'Reservation') {
+
+    // Handle reservation table number
+    if (tableNum.isEmpty && serviceType == 'Reservation') {
       try {
         final reservation = json['reservation'];
-        if (reservation != null &&
-            reservation['table_id'] is List &&
-            (reservation['table_id'] as List).isNotEmpty) {
-          final firstTable = reservation['table_id'][0];
-          tableNum = firstTable['table_number'] ?? 'TBD';
+        if (reservation != null) {
+          if (reservation['table_id'] is List &&
+              (reservation['table_id'] as List).isNotEmpty) {
+            final firstTable = reservation['table_id'][0];
+            tableNum = firstTable['table_number']?.toString() ?? 'TBD';
+          } else if (reservation['table_id'] is Map) {
+            tableNum =
+                reservation['table_id']['table_number']?.toString() ?? 'TBD';
+          } else if (reservation['tableNumber'] != null) {
+            tableNum = reservation['tableNumber'].toString();
+          }
         }
       } catch (e) {
         tableNum = 'TBD';
       }
+    }
+
+    // Parse dates
+    DateTime? createdAt;
+    DateTime? updatedAt;
+    DateTime? createdAtWIB;
+    DateTime? updatedAtWIB;
+
+    try {
+      if (json['createdAt'] != null) {
+        createdAt = DateTime.parse(json['createdAt']);
+      }
+      if (json['updatedAt'] != null) {
+        updatedAt = DateTime.parse(json['updatedAt']);
+      }
+
+      // ✅ Tambahkan parsing untuk WIB
+      if (json['createdAtWIB'] != null) {
+        createdAtWIB = DateTime.parse(json['createdAtWIB']);
+      }
+      if (json['updatedAtWIB'] != null) {
+        updatedAtWIB = DateTime.parse(json['updatedAtWIB']);
+      }
+
+      // Fallback to WIB fields
+      if (createdAt == null && json['createdAtWIB'] != null) {
+        createdAt = DateTime.parse(json['createdAtWIB']);
+      }
+      if (updatedAt == null && json['updatedAtWIB'] != null) {
+        updatedAt = DateTime.parse(json['updatedAtWIB']);
+      }
+    } catch (e) {
+      // Use current time as fallback
+      createdAt = DateTime.now();
+      updatedAt = DateTime.now();
     }
 
     // Parse reservation info
@@ -97,58 +273,99 @@ class Order {
     String? reservationTime;
     DateTime? reservationDateTime;
     Map<String, dynamic>? reservationData;
+    String? servingOption;
+    DateTime? foodServingTime;
 
     if (json['reservation'] != null) {
       final reservation = json['reservation'];
-      reservationData = Map<String, dynamic>.from(reservation); // ✅ Simpan full data
+      reservationData = reservation is Map
+          ? Map<String, dynamic>.from(reservation)
+          : null;
 
-      final rawDate = reservation['reservation_date'];
-      reservationTime = reservation['reservation_time'];
+      // Handle reservation date and time
+      if (reservation is Map) {
+        // 🆕 Parse serving option
+        servingOption =
+            reservation['food_serving_option']?.toString() ?? 'immediate';
 
-      if (rawDate != null) {
-        try {
-          final date = DateTime.parse(rawDate);
-          reservationDate = '${date.day}/${date.month}/${date.year}';
-
-          // ✅ Combine date + time untuk DateTime lengkap
-          if (reservationTime != null) {
-            final timeParts = reservationTime.split(':');
-            if (timeParts.length >= 2) {
-              final hour = int.tryParse(timeParts[0]) ?? 0;
-              final minute = int.tryParse(timeParts[1]) ?? 0;
-
-              reservationDateTime = DateTime(
-                date.year,
-                date.month,
-                date.day,
-                hour,
-                minute,
-              );
-            }
+        // 🆕 Parse food serving time
+        if (reservation['food_serving_time'] != null) {
+          try {
+            foodServingTime = DateTime.parse(reservation['food_serving_time']);
+          } catch (e) {
+            // ignore parsing error
           }
-        } catch (e) {
-          // ignore parsing error
+        }
+
+        final rawDate = reservation['reservation_date'];
+        reservationTime = reservation['reservation_time'];
+
+        if (rawDate != null) {
+          try {
+            final date = DateTime.parse(rawDate);
+            reservationDate = '${date.day}/${date.month}/${date.year}';
+
+            // Combine date + time for complete DateTime
+            if (reservationTime != null) {
+              final timeParts = reservationTime.split(':');
+              if (timeParts.length >= 2) {
+                final hour = int.tryParse(timeParts[0]) ?? 0;
+                final minute = int.tryParse(timeParts[1]) ?? 0;
+
+                reservationDateTime = DateTime(
+                  date.year,
+                  date.month,
+                  date.day,
+                  hour,
+                  minute,
+                );
+              }
+            }
+          } catch (e) {
+            // ignore parsing error
+          }
         }
       }
     }
 
+    // Calculate total price
+    double? totalPrice;
+    if (json['grandTotal'] != null) {
+      totalPrice = (json['grandTotal'] as num).toDouble();
+    } else if (json['totalPrice'] != null) {
+      totalPrice = (json['totalPrice'] as num).toDouble();
+    } else {
+      // Calculate from items as fallback
+      totalPrice = itemsList.fold<double>(
+        0.0,
+        (double sum, OrderItem item) => sum + (item.subtotal ?? 0.0),
+      );
+    }
+
     return Order(
-      orderId: json['order_id'],
-      name: json['user'] ?? 'Guest',
+      orderId: json['order_id']?.toString() ?? json['_id']?.toString(),
+      name: json['user']?.toString() ?? 'Guest',
       table: tableNum,
       service: serviceType,
-      source: json['source'] ?? 'Unknown',
-      paymentMethod: json['paymentMethod'] ?? 'Cash',
+      source: json['source']?.toString() ?? 'Unknown',
+      paymentMethod: json['paymentMethod']?.toString() ?? 'Cash',
       items: itemsList,
-      updatedAt: json['updatedAt'] != null
-          ? DateTime.parse(json['updatedAt'])
-          : DateTime.now(),
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      createdAtWIB: createdAtWIB,
+      updatedAtWIB: updatedAtWIB,
+      orderType: json['orderType']?.toString(),
       reservationDate: reservationDate,
       reservationTime: reservationTime,
-      orderType: json['orderType'],
       reservationDateTime: reservationDateTime,
       status: (json['status'] ?? 'Waiting').toString(),
       reservationData: reservationData,
+      totalPrice: totalPrice,
+      outletId: json['outlet']?.toString(),
+      cashierId: json['cashierId']?.toString(),
+      userId: json['user_id']?.toString(),
+      servingOption: servingOption,
+      foodServingTime: foodServingTime,
     );
   }
 
@@ -183,31 +400,292 @@ class Order {
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
+  // String remainingText() {
+  //   if (updatedAt == null) return '30:00';
+  //   final now = DateTime.now();
+  //   final diff = now.difference(updatedAt!);
+  //   final remaining = 30 * 60 - diff.inSeconds;
+  //
+  //   if (remaining <= 0) {
+  //     return '00:00';
+  //   }
+  //
+  //   final minutes = remaining ~/ 60;
+  //   final seconds = remaining % 60;
+  //
+  //   return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  // }
+
   String totalCookTime() {
     if (updatedAt == null) return '0 menit';
     final now = DateTime.now();
     final diff = now.difference(updatedAt!);
-    return '${diff.inMinutes} menit';
+
+    if (diff.inHours > 0) {
+      return '${diff.inHours} jam ${diff.inMinutes.remainder(60)} menit';
+    } else {
+      return '${diff.inMinutes} menit';
+    }
   }
 
-  // ✅ Helper untuk tampilan countdown reservasi
+  // ✅ Updated helper untuk countdown reservasi dengan serving option
   String reservationCountdown() {
-    if (reservationDateTime == null) return '-';
+    if (servingOption == 'scheduled' && foodServingTime != null) {
+      // 🎯 SCHEDULED: Hitung berdasarkan food_serving_time - 30 menit
+      final now = DateTime.now();
+      final prepStartTime = foodServingTime!.subtract(
+        const Duration(minutes: 30),
+      );
+      final diff = prepStartTime.difference(now);
 
-    final now = DateTime.now();
-    final diff = reservationDateTime!.difference(now);
+      if (diff.isNegative) {
+        // Sudah lewat waktu mulai persiapan, hitung ke serving time
+        final servingDiff = foodServingTime!.difference(now);
 
-    if (diff.isNegative) {
-      return 'Sudah lewat';
-    }
+        if (servingDiff.isNegative) {
+          return 'Sudah lewat waktu serving';
+        }
 
-    final hours = diff.inHours;
-    final minutes = diff.inMinutes.remainder(60);
+        final hours = servingDiff.inHours;
+        final minutes = servingDiff.inMinutes.remainder(60);
+        return 'Serving dalam ${hours > 0 ? '$hours jam ' : ''}$minutes menit';
+      }
 
-    if (hours > 0) {
-      return '$hours jam $minutes menit lagi';
+      final hours = diff.inHours;
+      final minutes = diff.inMinutes.remainder(60);
+
+      if (hours > 0) {
+        return 'Mulai prep dalam $hours jam $minutes menit';
+      } else {
+        return 'Mulai prep dalam $minutes menit';
+      }
     } else {
-      return '$minutes menit lagi';
+      // ✅ IMMEDIATE: Hitung berdasarkan reservation_time - 30 menit (default)
+      if (reservationDateTime == null) return '-';
+
+      final now = DateTime.now();
+      final prepStartTime = reservationDateTime!.subtract(
+        const Duration(minutes: 30),
+      );
+      final diff = prepStartTime.difference(now);
+
+      if (diff.isNegative) {
+        return 'Sudah waktunya';
+      }
+
+      final hours = diff.inHours;
+      final minutes = diff.inMinutes.remainder(60);
+
+      if (hours > 0) {
+        return '$hours jam $minutes menit lagi';
+      } else {
+        return '$minutes menit lagi';
+      }
     }
+  }
+
+  // 🆕 Helper untuk mendapatkan waktu target serving
+  DateTime? get targetServingTime {
+    if (servingOption == 'scheduled' && foodServingTime != null) {
+      return foodServingTime;
+    }
+    return reservationDateTime;
+  }
+
+  // 🆕 Helper untuk mendapatkan waktu mulai persiapan
+  DateTime? get preparationStartTime {
+    final target = targetServingTime;
+    if (target == null) return null;
+    return target.subtract(const Duration(minutes: 30));
+  }
+
+  // 🆕 Helper untuk cek apakah sudah waktunya mulai persiapan
+  bool get shouldStartPreparation {
+    final prepStart = preparationStartTime;
+    if (prepStart == null) return false;
+    return DateTime.now().isAfter(prepStart);
+  }
+
+  // 🆕 Helper untuk mendapatkan formatted serving time
+  String get formattedServingTime {
+    if (servingOption == 'scheduled' && foodServingTime != null) {
+      return '${foodServingTime!.hour.toString().padLeft(2, '0')}:${foodServingTime!.minute.toString().padLeft(2, '0')}';
+    }
+    return reservationTime ?? '-';
+  }
+
+  // 🆕 Helper untuk mendapatkan serving option display text
+  String get servingOptionDisplay {
+    if (servingOption == 'scheduled') {
+      return 'Terjadwal';
+    }
+    return 'Langsung';
+  }
+
+  // ✅ Helper untuk cek apakah order ini untuk kitchen (berdasarkan workstation)
+  bool get isKitchenOrder {
+    return items.any((item) => item.isKitchenItem);
+  }
+
+  // ✅ Helper untuk cek apakah order ini untuk bar (berdasarkan workstation)
+  bool get isBarOrder {
+    return items.any((item) => item.isBarItem);
+  }
+
+  // ✅ Get only kitchen items (makanan)
+  List<OrderItem> get kitchenItems {
+    return items.where((item) => item.isKitchenItem).toList();
+  }
+
+  // ✅ Get only bar items (minuman)
+  List<OrderItem> get barItems {
+    return items.where((item) => item.isBarItem).toList();
+  }
+
+  // ✅ Check if order has mixed items (both kitchen and bar)
+  bool get hasMixedItems {
+    return isKitchenOrder && isBarOrder;
+  }
+
+  // ✅ Helper untuk menentukan bar type berdasarkan table number
+  String? get barType {
+    if (table.trim().isEmpty) return 'depan';
+
+    final cleanTable = table.trim();
+    final firstChar = cleanTable[0].toUpperCase();
+
+    // Cek apakah angka
+    if (RegExp(r'^[0-9]').hasMatch(table)) {
+      return 'depan'; // ✅ Meja angka masuk Bar Depan
+    }
+
+    // Cek huruf A-I
+    if (firstChar.compareTo('A') >= 0 && firstChar.compareTo('I') <= 0) {
+      return 'depan';
+    }
+    // Cek huruf J-Z
+    else if (firstChar.compareTo('J') >= 0 && firstChar.compareTo('Z') <= 0) {
+      return 'belakang';
+    }
+
+    return null;
+  }
+
+  // ✅ Get workstation distribution summary
+  Map<String, int> get workstationSummary {
+    final summary = <String, int>{};
+
+    for (final item in items) {
+      final workstation = item.resolvedWorkstation;
+      summary[workstation] = (summary[workstation] ?? 0) + item.qty;
+    }
+
+    return summary;
+  }
+
+  // ✅ Format waktu yang user-friendly
+  String get formattedCreatedTime {
+    if (createdAt == null) return '-';
+    return '${createdAt!.hour.toString().padLeft(2, '0')}:${createdAt!.minute.toString().padLeft(2, '0')}';
+  }
+
+  String get formattedUpdatedTime {
+    if (updatedAt == null) return '-';
+    return '${updatedAt!.hour.toString().padLeft(2, '0')}:${updatedAt!.minute.toString().padLeft(2, '0')}';
+  }
+
+  // ✅ Helper untuk status display
+  String get statusDisplay {
+    switch (status.toLowerCase()) {
+      case 'waiting':
+      case 'pending':
+        return 'Menunggu';
+      case 'onprocess':
+      case 'preparing':
+        return 'Diproses';
+      case 'ready':
+        return 'Siap';
+      case 'completed':
+        return 'Selesai';
+      case 'cancelled':
+      case 'canceled':
+        return 'Dibatalkan';
+      default:
+        return status;
+    }
+  }
+
+  // ✅ Helper untuk warna status
+  String get statusColor {
+    switch (status.toLowerCase()) {
+      case 'waiting':
+      case 'pending':
+        return '#FFA500'; // Orange
+      case 'onprocess':
+      case 'preparing':
+        return '#007BFF'; // Blue
+      case 'ready':
+        return '#28A745'; // Green
+      case 'completed':
+        return '#6C757D'; // Gray
+      case 'cancelled':
+      case 'canceled':
+        return '#DC3545'; // Red
+      default:
+        return '#6C757D'; // Gray
+    }
+  }
+
+  // ✅ Updated copyWith method dengan serving option
+  Order copyWith({
+    String? orderId,
+    String? name,
+    String? table,
+    String? service,
+    String? source,
+    String? paymentMethod,
+    List<OrderItem>? items,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    DateTime? createdAtWIB,
+    DateTime? updatedAtWIB,
+    String? orderType,
+    String? reservationDate,
+    String? reservationTime,
+    DateTime? reservationDateTime,
+    String? status,
+    Map<String, dynamic>? reservationData,
+    double? totalPrice,
+    String? outletId,
+    String? cashierId,
+    String? userId,
+    String? servingOption,
+    DateTime? foodServingTime,
+  }) {
+    return Order(
+      orderId: orderId ?? this.orderId,
+      name: name ?? this.name,
+      table: table ?? this.table,
+      service: service ?? this.service,
+      source: source ?? this.source,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      items: items ?? this.items,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdAtWIB: createdAt ?? this.createdAtWIB,
+      updatedAtWIB: updatedAt ?? this.updatedAtWIB,
+      orderType: orderType ?? this.orderType,
+      reservationDate: reservationDate ?? this.reservationDate,
+      reservationTime: reservationTime ?? this.reservationTime,
+      reservationDateTime: reservationDateTime ?? this.reservationDateTime,
+      status: status ?? this.status,
+      reservationData: reservationData ?? this.reservationData,
+      totalPrice: totalPrice ?? this.totalPrice,
+      outletId: outletId ?? this.outletId,
+      cashierId: cashierId ?? this.cashierId,
+      userId: userId ?? this.userId,
+      servingOption: servingOption ?? this.servingOption,
+      foodServingTime: foodServingTime ?? this.foodServingTime,
+    );
   }
 }

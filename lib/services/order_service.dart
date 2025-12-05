@@ -1,18 +1,27 @@
-// services/order_service.dart
+// services/order_service.dart (UPDATED - Using Workstation Endpoints)
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/order.dart';
+import '../models/device.dart';
 import 'package:flutter/foundation.dart';
 
 class OrderService {
   static String get baseUrl => dotenv.env['BASE_URL'] ?? 'http://localhost:3000';
 
-  // 📹 Ambil semua order untuk kitchen
-  static Future<List<Order>> getKitchenOrders() async {
+  // ✅ NEW: Get orders by workstation type using Device
+  static Future<List<Order>> getWorkstationOrders(Device device) async {
     try {
+      final workstationType = device.workstationTypeString;
+
+      if (kDebugMode) {
+        print('📡 Fetching orders for workstation: $workstationType');
+        print('   Device: ${device.deviceName}');
+        print('   Location: ${device.location}');
+      }
+
       final response = await http.get(
-        Uri.parse('$baseUrl/api/orders/kitchen'),
+        Uri.parse('$baseUrl/api/workstation/$workstationType/orders'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -20,10 +29,41 @@ class OrderService {
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = json.decode(response.body);
-        // const JsonEncoder encoder = JsonEncoder.withIndent('  ');
-        // final prettyData = encoder.convert(data);
-        // debugPrint('Fetched orders:\n$prettyData');
 
+        if (data['success'] == true && data['data'] != null) {
+          List<dynamic> ordersData = data['data'];
+
+          if (kDebugMode) {
+            print('✅ Received ${ordersData.length} orders for $workstationType');
+            print('   Query time: ${data['meta']?['queryTime']}');
+          }
+
+          return ordersData.map((orderJson) => Order.fromJson(orderJson)).toList();
+        } else {
+          throw Exception('Invalid response format');
+        }
+      } else {
+        throw Exception('Failed to load workstation orders: ${response.statusCode}');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error fetching workstation orders: $e');
+      }
+      throw Exception('Error fetching workstation orders: $e');
+    }
+  }
+
+  // ✅ DEPRECATED: Legacy methods for backward compatibility
+  @Deprecated('Use getWorkstationOrders(device) instead')
+  static Future<List<Order>> getKitchenOrders() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/orders/kitchen'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
         if (data['success'] == true && data['data'] != null) {
           List<dynamic> ordersData = data['data'];
           return ordersData.map((orderJson) => Order.fromJson(orderJson)).toList();
@@ -31,64 +71,207 @@ class OrderService {
           throw Exception('Invalid response format');
         }
       } else {
-        throw Exception('Failed to load orders: ${response.statusCode}');
+        throw Exception('Failed to load kitchen orders: ${response.statusCode}');
       }
     } catch (e) {
-      throw Exception('Error fetching orders: $e');
+      throw Exception('Error fetching kitchen orders: $e');
     }
   }
 
-  // 📹 Update status order
+  @Deprecated('Use getWorkstationOrders(device) instead')
+  static Future<List<Order>> getBarOrders() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/orders/bar'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          List<dynamic> ordersData = data['data'];
+          return ordersData.map((orderJson) => Order.fromJson(orderJson)).toList();
+        } else {
+          throw Exception('Invalid response format for bar orders');
+        }
+      } else {
+        throw Exception('Failed to load bar orders: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error fetching bar orders: $e');
+    }
+  }
+
+  // ✅ NEW: Update workstation order status
+  static Future<bool> updateWorkstationOrderStatus(
+      String orderId,
+      String status,
+      Device device,
+      ) async {
+    try {
+      if (kDebugMode) {
+        print('🔄 Updating workstation order status:');
+        print('   Order: $orderId');
+        print('   Status: $status');
+        print('   Device: ${device.deviceName}');
+        print('   Workstation: ${device.workstationTypeString}');
+      }
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/api/workstation/orders/$orderId/status'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'status': status,
+          'workstationId': device.deviceId,
+          'workstationName': device.deviceName,
+          'workstationType': device.workstationTypeString,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        if (kDebugMode) {
+          print('✅ Order status updated successfully');
+        }
+        return true;
+      } else {
+        if (kDebugMode) {
+          print('❌ Failed to update order status: ${response.statusCode}');
+        }
+        return false;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error updating order status: $e');
+      }
+      return false;
+    }
+  }
+
+  // ✅ DEPRECATED: Legacy update methods
+  @Deprecated('Use updateWorkstationOrderStatus instead')
   static Future<bool> updateOrderStatus(String orderId, String status) async {
     try {
       final response = await http.put(
         Uri.parse('$baseUrl/api/orders/$orderId/status'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
-          'status': status,
-        }),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'status': status}),
       );
-
       return response.statusCode == 200;
     } catch (e) {
-      // if (kDebugMode) {
-      //   print('Error updating order status: $e');
-      // }
+      if (kDebugMode) print('Error updating order status: $e');
       return false;
+    }
+  }
+
+  // ✅ NEW: Batch auto-confirm multiple orders
+  static Future<bool> batchAutoConfirmOrders(List<String> orderIds) async {
+    if (orderIds.isEmpty) return false;
+
+    try {
+      if (kDebugMode) {
+        print('📤 Batch confirming ${orderIds.length} orders: $orderIds');
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/orders/batch-confirm'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'orderIds': orderIds}),
+      );
+
+      if (response.statusCode == 200) {
+        if (kDebugMode) {
+          print('✅ Batch confirm success for ${orderIds.length} orders');
+        }
+        return true;
+      } else {
+        if (kDebugMode) {
+          print('❌ Batch confirm failed: ${response.statusCode}');
+        }
+        return false;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error batch confirming orders: $e');
+      }
+      return false;
+    }
+  }
+
+  // ✅ Helper: Parse waktu dari database sebagai waktu lokal (strip timezone)
+  static DateTime? _parseAsLocalTime(String? timeStr) {
+    if (timeStr == null) return null;
+
+    try {
+      String cleanTimeStr = timeStr
+          .replaceAll(RegExp(r'\+\d{2}:\d{2}$'), '')
+          .replaceAll(RegExp(r'-\d{2}:\d{2}$'), '')
+          .replaceAll('Z', '');
+
+      return DateTime.parse(cleanTimeStr);
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error parsing time string "$timeStr": $e');
+      }
+      return null;
     }
   }
 
   // ✅ Helper: Check apakah reservasi sudah waktunya dipindah ke penyiapan
   static bool shouldMoveReservationToPreparation(Order order) {
-    if (order.reservationDateTime == null) return false;
+    if (order.reservationData == null) return false;
 
     final now = DateTime.now();
+    final reservationData = order.reservationData!;
+    final servingOption = reservationData['food_serving_option'] ?? 'immediate';
+
+    if (servingOption == 'scheduled') {
+      final servingTimeStr = reservationData['food_serving_time'];
+      if (servingTimeStr == null) {
+        if (kDebugMode) {
+          print('⚠️ Scheduled reservation ${order.orderId} has no food_serving_time');
+        }
+        return _checkImmediatePreparation(order, now);
+      }
+
+      final servingTime = _parseAsLocalTime(servingTimeStr);
+      if (servingTime == null) return false;
+
+      final diffInMinutes = servingTime.difference(now).inMinutes;
+
+      if (kDebugMode) {
+        print('📅 [SCHEDULED] Checking reservation ${order.orderId}:');
+        print('   Current time: $now');
+        print('   Food serving time (local): $servingTime');
+        print('   Difference: $diffInMinutes minutes');
+      }
+
+      return diffInMinutes <= 30 && diffInMinutes >= -60;
+    } else {
+      return _checkImmediatePreparation(order, now);
+    }
+  }
+
+  static bool _checkImmediatePreparation(Order order, DateTime now) {
+    if (order.reservationDateTime == null) return false;
+
     final reservationTime = order.reservationDateTime!;
+    final diffInMinutes = reservationTime.difference(now).inMinutes;
 
-    // Hitung selisih waktu dalam menit
-    final diff = reservationTime.difference(now);
-    final diffInMinutes = diff.inMinutes;
+    if (kDebugMode) {
+      print('⚡ [IMMEDIATE] Checking reservation ${order.orderId}:');
+      print('   Difference: $diffInMinutes minutes');
+    }
 
-    // if (kDebugMode) {
-    //   print('🕐 Checking reservation ${order.orderId}:');
-    //   print('   Current time: $now');
-    //   print('   Reservation time: $reservationTime');
-    //   print('   Difference: $diffInMinutes minutes');
-    // }
-
-    // Pindahkan jika waktu reservasi 30 menit atau kurang dari sekarang
-    // Dan belum terlalu lewat (maksimal 60 menit setelah waktu reservasi)
     return diffInMinutes <= 30 && diffInMinutes >= -60;
   }
 
-  // 📹 Refresh dan kategorikan order
-  static Future<Map<String, List<Order>>> refreshOrders() async {
+  // ✅ NEW: Refresh orders using Device object
+  static Future<Map<String, List<Order>>> refreshWorkstationOrders(Device device) async {
     try {
-      final allOrders = await getKitchenOrders();
+      final allOrders = await getWorkstationOrders(device);
 
       List<Order> pending = [];
+      List<Order> waiting = [];
       List<Order> preparing = [];
       List<Order> completed = [];
       List<Order> reservations = [];
@@ -96,98 +279,162 @@ class OrderService {
       for (var order in allOrders) {
         String status = order.status.toLowerCase();
 
-        // Skip cancelled/paid
         if (status == 'cancelled' || status == 'paid') {
-          if (kDebugMode) {
-            print('Order ${order.orderId} has status: ${order.status} - skipping');
-          }
           continue;
         }
 
-        // ✅ Cek apakah ini reservasi
         bool isReservation = order.service.toLowerCase().contains('reservation') ||
             order.orderType?.toLowerCase() == 'reservation';
 
         if (isReservation) {
-          // Jika sudah status OnProcess atau Completed, masukkan ke preparing/completed
           if (status == 'onprocess') {
             preparing.add(order);
-            if (kDebugMode) {
-              print('✅ Reservation ${order.orderId} already in preparation');
-            }
             continue;
           } else if (status == 'completed') {
             completed.add(order);
             continue;
           }
 
-          // Cek apakah perlu dipindah ke preparation
           if (shouldMoveReservationToPreparation(order)) {
             if (kDebugMode) {
-              print('🔄 Moving reservation ${order.orderId} to preparation');
-              print('   Time: ${order.reservationDateTime}');
+              print('📅 Reservation ${order.orderId} ready for preparation');
             }
-
-            // Auto-update status jadi OnProcess
-            bool updated = await updateOrderStatus(order.orderId!, 'OnProcess');
-
-            if (updated) {
-              // Update status lokal
-              order.status = 'OnProcess';
-              preparing.add(order);
-              if (kDebugMode) {
-                print('✅ Successfully moved ${order.orderId} to preparation');
-              }
-            } else {
-              // Jika gagal update, tetap di reservations
-              reservations.add(order);
-              if (kDebugMode) {
-                print('❌ Failed to update ${order.orderId}, keeping in reservations');
-              }
-            }
+            reservations.add(order);
             continue;
           } else {
-            // Tetap di reservations
             reservations.add(order);
-            if (kDebugMode) {
-              print('⏰ Reservation ${order.orderId} not ready yet');
-            }
             continue;
           }
         }
 
-        // Kategorikan berdasarkan status (non-reservation)
         switch (status) {
           case 'waiting':
+            waiting.add(order);
+            if (kDebugMode) {
+              print('🔥 Order ${order.orderId} in WAITING status');
+            }
+            break;
+
+          case 'pending':
             pending.add(order);
             break;
+
           case 'onprocess':
+          case 'preparing':
             preparing.add(order);
             break;
+
           case 'completed':
+          case 'ready':
             completed.add(order);
             break;
+
           default:
-            if (kDebugMode) {
-              print('Order ${order.orderId} has unknown status: ${order.status}');
-            }
+            pending.add(order);
             break;
         }
       }
 
       if (kDebugMode) {
-        print(
-            'Orders categorized: pending=${pending.length}, preparing=${preparing.length}, completed=${completed.length}, reservations=${reservations.length}');
+        print('✅ ${device.workstationTypeString} orders: '
+            'pending=${pending.length}, '
+            'waiting=${waiting.length}, '
+            'preparing=${preparing.length}, '
+            'completed=${completed.length}, '
+            'reservations=${reservations.length}');
       }
 
       return {
         'pending': pending,
+        'waiting': waiting,
         'preparing': preparing,
         'completed': completed,
         'reservations': reservations,
       };
     } catch (e) {
-      throw Exception('Error refreshing orders: $e');
+      if (kDebugMode) {
+        print('❌ Error refreshing workstation orders: $e');
+      }
+      throw Exception('Error refreshing workstation orders: $e');
+    }
+  }
+
+  // ✅ DEPRECATED: Legacy refresh methods
+  // @Deprecated('Use refreshWorkstationOrders(device) instead')
+  // static Future<Map<String, List<Order>>> refreshKitchenOrders() async {
+  //   try {
+  //     final _ = await getKitchenOrders();
+  //     // ... existing implementation
+  //     return {
+  //       'pending': [],
+  //       'waiting': [],
+  //       'preparing': [],
+  //       'completed': [],
+  //       'reservations': [],
+  //     };
+  //   } catch (e) {
+  //     throw Exception('Error refreshing kitchen orders: $e');
+  //   }
+  // }
+  //
+  // @Deprecated('Use refreshWorkstationOrders(device) instead')
+  // static Future<Map<String, List<Order>>> refreshBarOrders(String barType) async {
+  //   try {
+  //     final allOrders = await getBarOrders();
+  //     // ... existing implementation
+  //     return {
+  //       'pending': [],
+  //       'waiting': [],
+  //       'preparing': [],
+  //       'ready': [],
+  //       'completed': [],
+  //     };
+  //   } catch (e) {
+  //     throw Exception('Error refreshing bar orders: $e');
+  //   }
+  // }
+
+  // Other methods remain unchanged...
+  static Future<bool> completeOrderWithItems(
+      String orderId,
+      List<String> completedItemIds,
+      {String? completedBy}
+      ) async {
+    try {
+      final Map<String, dynamic> body = {'completedItems': completedItemIds};
+      if (completedBy != null) body['completedBy'] = completedBy;
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/api/orders/$orderId/complete'),
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
+        body: json.encode(body),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<Order?> getOrderById(String orderId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/orders/$orderId'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        if (data['success'] == true && data['data'] != null) {
+          return Order.fromJson(data['data']);
+        }
+      }
+      return null;
+    } catch (e) {
+      return null;
     }
   }
 }

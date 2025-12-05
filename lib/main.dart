@@ -1,7 +1,8 @@
 // main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'screens/kitchen_dashboard.dart';
+import 'package:keep_screen_on/keep_screen_on.dart'; // Import package keep_screen_on
+import 'screens/device_selection_screen.dart';
 import 'config/app_theme.dart';
 
 void main() async {
@@ -9,6 +10,9 @@ void main() async {
 
   // Load environment variables
   await dotenv.load(fileName: ".env");
+
+  // Enable keep screen on
+  KeepScreenOn.turnOn();
 
   runApp(BarajaKitchenApp());
 }
@@ -19,10 +23,10 @@ class BarajaKitchenApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Baraja Kitchen',
+      title: 'Baraja Workstation',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
-      home: KitchenDashboard(),
+      home: const DeviceSelectionScreen(),
     );
   }
 }

@@ -3,17 +3,17 @@ class StockMenu {
   final String name;
   final String category;
   final int calculatedStock;
-  final int manualStock;
+  int manualStock;
   final int effectiveStock;
 
-  StockMenu ({
+  StockMenu({
     required this.menuItemId,
     required this.name,
     required this.category,
     required this.calculatedStock,
     required this.manualStock,
-    required this.effectiveStock
-});
+    required this.effectiveStock,
+  });
 
   factory StockMenu.fromJson(Map<String, dynamic> json) {
     return StockMenu(
