@@ -230,7 +230,7 @@ class Updatestock {
                         );
 
                         try {
-                          final success = await StockmenuService.updateManualStock(
+                          final success = await StockMenuService.updateManualStock(
                             stock.menuItemId,
                             newStock,
                             adjustmentNote: note.isEmpty ? null : note,
