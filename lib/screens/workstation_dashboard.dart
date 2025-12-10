@@ -1082,121 +1082,133 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
         
         // Tablet: 3-column layout
         if (isTablet) {
-          return Row(
-            children: [
-              // Column 2: Order List (increased width for better proportion)
-              SizedBox(
-                width: 400,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border(right: BorderSide(color: Colors.grey.shade200)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          '${filteredOrders.length} Orders',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black87,
+          return SafeArea(
+            top: false,
+            left: false,
+            right: false,
+            bottom: true,
+            child: Container(
+              color: Colors.white,
+              child: Row(
+                children: [
+                  // Column 1: Order List - Full height with header at top
+                  SizedBox(
+                    width: 400,
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Text(
+                              '${filteredOrders.length} Orders',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.black87,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      Expanded(
-                        child: ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          itemCount: filteredOrders.length,
-                          itemBuilder: (context, index) {
-                            final order = filteredOrders[index];
-                            final isSelected = _selectedOrderId == order.orderId;
-                            
-                            return OrderListItem(
-                              order: order,
-                              queueNumber: showTimer && !isFinished ? index + 1 : index + 1,
-                              isSelected: isSelected,
-                              onTap: () {
-                                setState(() {
-                                  _selectedOrderId = order.orderId;
-                                });
+                          Expanded(
+                            child: ListView.builder(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              itemCount: filteredOrders.length,
+                              itemBuilder: (context, index) {
+                                final order = filteredOrders[index];
+                                final isSelected = _selectedOrderId == order.orderId;
+                                
+                                return OrderListItem(
+                                  order: order,
+                                  queueNumber: showTimer && !isFinished ? index + 1 : index + 1,
+                                  isSelected: isSelected,
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedOrderId = order.orderId;
+                                    });
+                                  },
+                                  brandColor: brandColor,
+                                );
                               },
-                              brandColor: brandColor,
-                            );
-                          },
-                        ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-              // Column 3: Detail Panel (constrained width)
-              Expanded(
-                child: Center(
-                  child: Container(
-                    constraints: const BoxConstraints(maxWidth: 500),
-                    padding: const EdgeInsets.all(16),
-                    child: Builder(
-                    builder: (context) {
-                      // Auto-select first order if none selected
-                      if (_selectedOrderId == null && filteredOrders.isNotEmpty) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) {
-                            setState(() {
-                              _selectedOrderId = filteredOrders.first.orderId;
+                  // Divider between List and Detail
+                  VerticalDivider(
+                    width: 1,
+                    thickness: 1,
+                    color: Colors.grey.shade200,
+                  ),
+                  // Column 2: Detail Panel - Full height with header at top
+                  Expanded(
+                    child: Container(
+                      color: Colors.white,
+                      child: Builder(
+                        builder: (context) {
+                          // Auto-select first order if none selected
+                          if (_selectedOrderId == null && filteredOrders.isNotEmpty) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) {
+                                setState(() {
+                                  _selectedOrderId = filteredOrders.first.orderId;
+                                });
+                              }
                             });
                           }
-                        });
-                      }
-                      
-                      Order? selectedOrder;
-                      int? selectedIndex;
-                      
-                      if (_selectedOrderId != null) {
-                        selectedIndex = filteredOrders.indexWhere((o) => o.orderId == _selectedOrderId);
-                        if (selectedIndex != -1) {
-                          selectedOrder = filteredOrders[selectedIndex];
-                        }
-                      }
-                      
-                      return OrderDetailPanel(
-                        order: selectedOrder,
-                        queueNumber: showTimer && !isFinished && selectedIndex != null && selectedIndex != -1
-                            ? selectedIndex + 1
-                            : null,
-                        brandColor: brandColor,
-                        showTimer: showTimer && !isFinished,
-                        onComplete: showTimer && !isFinished && selectedOrder != null
-                            ? () => _completeOrder(selectedOrder!)
-                            : null,
-                        onReprint: selectedOrder != null
-                            ? () async {
-                                final success = await _printService.manualPrint(selectedOrder!);
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Row(
-                                        children: [
-                                          Icon(success ? Icons.check_circle : Icons.error, color: Colors.white),
-                                          const SizedBox(width: 8),
-                                          Text(success ? 'Berhasil print ulang' : 'Gagal print, cek koneksi printer'),
-                                        ],
-                                      ),
-                                      backgroundColor: success ? brandColor : Colors.red,
-                                      duration: const Duration(seconds: 2),
-                                    ),
-                                  );
-                                }
-                              }
-                            : null,
-                      );
-                    },
+                          
+                          Order? selectedOrder;
+                          int? selectedIndex;
+                          
+                          if (_selectedOrderId != null) {
+                            selectedIndex = filteredOrders.indexWhere((o) => o.orderId == _selectedOrderId);
+                            if (selectedIndex != -1) {
+                              selectedOrder = filteredOrders[selectedIndex];
+                            }
+                          }
+                          
+                          return OrderDetailPanel(
+                            order: selectedOrder,
+                            queueNumber: showTimer && !isFinished && selectedIndex != null && selectedIndex != -1
+                                ? selectedIndex + 1
+                                : null,
+                            brandColor: brandColor,
+                            showTimer: showTimer && !isFinished,
+                            onComplete: showTimer && !isFinished && selectedOrder != null
+                                ? () => _completeOrder(selectedOrder!)
+                                : null,
+                            onReprint: selectedOrder != null
+                                ? () async {
+                                    final success = await _printService.manualPrint(selectedOrder!);
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Row(
+                                            children: [
+                                              Icon(success ? Icons.check_circle : Icons.error, color: Colors.white),
+                                              const SizedBox(width: 8),
+                                              Text(success ? 'Berhasil print ulang' : 'Gagal print, cek koneksi printer'),
+                                            ],
+                                          ),
+                                          backgroundColor: success ? brandColor : Colors.red,
+                                          duration: const Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                : null,
+                          );
+                        },
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
-              )],
+            ),
           );
         }
         
@@ -1249,59 +1261,65 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
   }
 
   Widget _buildSidebar({bool isMobile = false}) {
-    return SingleChildScrollView(
-      child: Container(
-        width: isMobile ? null : 240,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: isMobile ? [] : [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(2, 0))],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Mobile: Show badges section at top
-            if (isMobile) ...[ 
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: brandColor.withOpacity(0.05),
-                  border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Status & Info',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _buildDeviceBadge(),
-                        if (_printService.isConfigured) _buildPrinterStatusBadge(),
-                        if (_printService.isConfigured) _buildAutoPrintBadge(),
-                        if (_notificationService.queueLength > 0) _buildNotificationBadge(),
-                      ],
-                    ),
-                  ],
-                ),
+    return Container(
+      width: isMobile ? null : 240,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: isMobile ? [] : [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(2, 0))],
+      ),
+      child: Column(  // ✅ UBAH: Dari SingleChildScrollView menjadi Column langsung
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Mobile: Show badges section at top
+          if (isMobile) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: brandColor.withOpacity(0.05),
+                border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
               ),
-              const Divider(height: 1),
-            ],
-            // Menu tabs
-            _buildSidebarTab(0, 'Penyiapan', preparing.length),
-            _buildSidebarTab(1, 'Batch Cook', preparing.length),
-            _buildSidebarTab(2, 'Selesai', done.length),
-            _buildSidebarTab(3, 'Reservasi', reservations.length),
-            _buildSidebarTab(5, 'Stok by Kategori', categories.length),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Status & Info',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildDeviceBadge(),
+                      if (_printService.isConfigured) _buildPrinterStatusBadge(),
+                      if (_printService.isConfigured) _buildAutoPrintBadge(),
+                      if (_notificationService.queueLength > 0) _buildNotificationBadge(),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
           ],
-        ),
+          // Menu tabs - ✅ TAMBAH: Expanded agar mengisi sisa space
+          Expanded(
+            child: SingleChildScrollView(  // ✅ ScrollView di dalam Expanded
+              child: Column(
+                children: [
+                  _buildSidebarTab(0, 'Penyiapan', preparing.length),
+                  _buildSidebarTab(1, 'Batch Cook', preparing.length),
+                  _buildSidebarTab(2, 'Selesai', done.length),
+                  _buildSidebarTab(3, 'Reservasi', reservations.length),
+                  _buildSidebarTab(5, 'Stok by Kategori', categories.length),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1430,6 +1448,7 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
 
     return Scaffold(
       key: _scaffoldKey,
+      backgroundColor: Colors.white,
       appBar: AppBar(
         elevation: 1,
         toolbarHeight: 70,
@@ -1512,35 +1531,37 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
         child: _buildSidebar(isMobile: true),
       ) : null,
       endDrawer: isMobile ? _buildActionsDrawer() : null,
-      body: _isLoading
-          ? _buildLoadingWidget()
-          : _errorMessage != null
-          ? _buildErrorWidget()
-          : Row(
+      body: Row(
         children: [
           if (!isMobile) _buildSidebar(),
+          if (!isMobile) VerticalDivider(
+            width: 1,
+            thickness: 1,
+            color: Colors.grey.shade200,
+          ),
           Expanded(
-            child: Container(
-              color: const Color(0xFFF9FAFB),
-              child: IndexedStack(
-                index: _selectedTabIndex,
-                children: [
-                  _buildOrdersList(preparing, true, false),
-                  BatchCookingView(
-                      orders: preparing,
-                      onBatchComplete: _completeBatchOrders
-                  ),
-                  _buildOrdersList(done, false, true),
-                  _buildOrdersList(reservations, false, false),
-                  TableStockmenu(
-                      stockMenu: stockmenu,
-                      onRefresh: _loadStockMenu,
-                      brandColor: brandColor
-                  ),
-                  _buildCategoriesPlaceholder(),
-                ],
-              ),
-            ),
+            child: _isLoading
+                ? _buildLoadingWidget()
+                : _errorMessage != null
+                ? _buildErrorWidget()
+                : IndexedStack(
+                  index: _selectedTabIndex,
+                  children: [
+                    _buildOrdersList(preparing, true, false),
+                    BatchCookingView(
+                        orders: preparing,
+                        onBatchComplete: _completeBatchOrders
+                    ),
+                    _buildOrdersList(done, false, true),
+                    _buildOrdersList(reservations, false, false),
+                    TableStockmenu(
+                        stockMenu: stockmenu,
+                        onRefresh: _loadStockMenu,
+                        brandColor: brandColor
+                    ),
+                    _buildCategoriesPlaceholder(),
+                  ],
+                ),
           ),
         ],
       ),
