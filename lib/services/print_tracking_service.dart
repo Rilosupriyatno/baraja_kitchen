@@ -31,13 +31,13 @@ class PrintTrackingService {
 
       // 🟢 Tampilkan ke console semua data yang akan dikirim
       print('====================== 🌐 PRINT ATTEMPT REQUEST ======================');
-      print('🔗 Endpoint: $baseUrl/api/orders/workstation/print-attempt');
+      print('🔗 Endpoint: $baseUrl/api/print/log-attempt');
       print('📦 Data yang dikirim (requestBody):');
       print(const JsonEncoder.withIndent('  ').convert(requestBody));
       print('======================================================================\n');
 
       final response = await http.post(
-          Uri.parse('$baseUrl/api/orders/workstation/print-attempt'),
+          Uri.parse('$baseUrl/api/print/log-attempt'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode(requestBody)
       );
@@ -67,7 +67,7 @@ class PrintTrackingService {
       ) async {
     try {
       final response = await http.post(
-          Uri.parse('$baseUrl/api/orders/workstation/print-problematic'),
+          Uri.parse('$baseUrl/api/print/log-problematic'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode({
             'order_id': orderId,
@@ -94,7 +94,7 @@ class PrintTrackingService {
   Future<void> logPrintSuccess(String logId, int duration, {bool wasProblematic = false}) async {
     try {
       final response = await http.post(
-          Uri.parse('$baseUrl/api/orders/workstation/print-success'),
+          Uri.parse('$baseUrl/api/print/log-success'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode({
             'log_id': logId,
@@ -131,7 +131,7 @@ class PrintTrackingService {
       }
 
       final response = await http.post(
-          Uri.parse('$baseUrl/api/orders/workstation/print-failure'),
+          Uri.parse('$baseUrl/api/print/log-failure'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode(requestBody)
       );
@@ -168,7 +168,7 @@ class PrintTrackingService {
       }
 
       final response = await http.post(
-          Uri.parse('$baseUrl/api/orders/workstation/print-skipped'),
+          Uri.parse('$baseUrl/api/print/log-skipped'),
           headers: {'Content-Type': 'application/json'},
           body: json.encode(requestBody)
       );

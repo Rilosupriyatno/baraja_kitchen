@@ -31,10 +31,7 @@ class ThermalPrintService {
   PrinterConnectionType _connectionType = PrinterConnectionType.wifi;
   bool _autoPrintEnabled = true;
 
-  // ✅ Track printed items per itemId (bukan orderId)
   final Set<String> _printedItemIds = <String>{};
-
-  // ✅ Track order yang sudah pernah diproses (untuk deteksi open bill)
   final Map<String, Set<String>> _orderItemsHistory = {};
 
   int _consecutiveFailures = 0;
@@ -42,7 +39,6 @@ class ThermalPrintService {
   static const int _maxRetries = 3;
   static const Duration _connectionTimeout = Duration(seconds: 10);
 
-  // ✅ NEW: Store Device reference instead of barType string
   Device? _currentDevice;
   late SharedPreferences _prefs;
 
@@ -138,7 +134,6 @@ class ThermalPrintService {
     }
   }
 
-  // ✅ NEW: Set device instead of barType
   void setDevice(Device device) {
     _currentDevice = device;
     if (kDebugMode) {
@@ -151,7 +146,6 @@ class ThermalPrintService {
     }
   }
 
-  // ✅ DEPRECATED: Keep for backward compatibility
   @Deprecated('Use setDevice(Device) instead')
   void setBarType(String? barType) {
     if (kDebugMode) {
@@ -159,20 +153,16 @@ class ThermalPrintService {
     }
   }
 
-  // ✅ NEW: Get workstation name from Device
   String get _workstationName {
     if (_currentDevice != null) {
       return _currentDevice!.workstationName;
     }
-
-    // Fallback for backward compatibility
     if (kDebugMode) {
       print('⚠️ No device set, using default KITCHEN');
     }
     return 'KITCHEN';
   }
 
-  // ✅ NEW: Get workstation type string for API
   String get _workstationType {
     if (_currentDevice != null) {
       return _currentDevice!.workstationTypeString;
@@ -347,9 +337,35 @@ class ThermalPrintService {
     }
   }
 
-// ============================================
-// AUTO PRINT WITH ITEM TRACKING
-// ============================================
+  // ============================================
+  // ✅ HELPER METHOD - SAFE ADDON/TOPPING PARSING
+  // ============================================
+  String _getSafeAddonText(dynamic addon) {
+    try {
+      final name = addon['name'] ?? 'Unknown';
+
+      if (addon['options'] != null) {
+        if (addon['options'] is Map) {
+          final label = addon['options']['label'] ?? addon['options']['name'] ?? '';
+          return label.isNotEmpty ? '  + $name - $label' : '  + $name';
+        } else if (addon['options'] is String) {
+          return '  + $name - ${addon['options']}';
+        }
+      }
+
+      return '  + $name';
+    } catch (e) {
+      if (kDebugMode) {
+        print('⚠️ Error parsing addon: $e');
+        print('   Addon data: $addon');
+      }
+      return '  + ${addon['name'] ?? 'Unknown Item'}';
+    }
+  }
+
+  // ============================================
+  // AUTO PRINT WITH ITEM TRACKING
+  // ============================================
   Future<bool> autoPrintOrder(Order order, {bool isOpenBill = false}) async {
     final workstation = _workstationType;
 
@@ -403,18 +419,21 @@ class ThermalPrintService {
       }
     }
 
-    // Log print attempt
     final List<String> logIds = [];
     for (final item in itemsToPrint) {
-      final stockInfo = await _checkItemStock(item);
-      final logId = await PrintTrackingService().logPrintAttempt(
-          order.orderId!,
-          _convertOrderItemToMap(item),
-          workstation,
-          printerConfig,
-          stockInfo
-      );
-      if (logId != null) logIds.add(logId);
+      try {
+        final stockInfo = await _checkItemStock(item);
+        final logId = await PrintTrackingService().logPrintAttempt(
+            order.orderId!,
+            _convertOrderItemToMap(item),
+            workstation,
+            printerConfig,
+            stockInfo
+        );
+        if (logId != null) logIds.add(logId);
+      } catch (e) {
+        if (kDebugMode) print('⚠️ Failed to log print attempt: $e');
+      }
     }
 
     final startTime = DateTime.now();
@@ -428,9 +447,13 @@ class ThermalPrintService {
 
         _recordSuccess();
 
-        final duration = DateTime.now().difference(startTime).inMilliseconds;
-        for (final logId in logIds) {
-          await PrintTrackingService().logPrintSuccess(logId, duration, wasProblematic: false);
+        try {
+          final duration = DateTime.now().difference(startTime).inMilliseconds;
+          for (final logId in logIds) {
+            await PrintTrackingService().logPrintSuccess(logId, duration, wasProblematic: false);
+          }
+        } catch (e) {
+          if (kDebugMode) print('⚠️ Failed to log success: $e');
         }
 
         if (kDebugMode) {
@@ -439,10 +462,14 @@ class ThermalPrintService {
         return true;
       } else {
         _recordFailure();
-        for (final logId in logIds) {
-          await PrintTrackingService().logPrintFailure(
-              logId, 'auto_print_failed', 'Print gagal'
-          );
+        try {
+          for (final logId in logIds) {
+            await PrintTrackingService().logPrintFailure(
+                logId, 'auto_print_failed', 'Print gagal'
+            );
+          }
+        } catch (e) {
+          if (kDebugMode) print('⚠️ Failed to log failure: $e');
         }
         if (kDebugMode) {
           print('❌ PRINT FAILED: ${order.orderId}');
@@ -452,10 +479,14 @@ class ThermalPrintService {
     } catch (e) {
       if (kDebugMode) print('❌ ERROR IN AUTO PRINT: $e');
       _recordFailure();
-      for (final logId in logIds) {
-        await PrintTrackingService().logPrintFailure(
-            logId, 'auto_print_error', e.toString()
-        );
+      try {
+        for (final logId in logIds) {
+          await PrintTrackingService().logPrintFailure(
+              logId, 'auto_print_error', e.toString()
+          );
+        }
+      } catch (e2) {
+        if (kDebugMode) print('⚠️ Failed to log error: $e2');
       }
       return false;
     }
@@ -598,6 +629,9 @@ class ThermalPrintService {
     }
   }
 
+  // ============================================
+  // ✅ FIXED: _generateReceiptForItems (WiFi)
+  // ============================================
   Future<void> _generateReceiptForItems(NetworkPrinter printer, Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false}) async {
     if (kDebugMode) {
       print('🖨️ [GENERATE RECEIPT]');
@@ -680,17 +714,53 @@ class ThermalPrintService {
       final itemNameWithService = '${item.name} (${order.service}) x${item.qty}';
       printer.text(itemNameWithService, styles: const PosStyles(bold: true));
 
+      // ✅ FIXED: Safe addon parsing
       if (item.addons != null && item.addons!.isNotEmpty) {
         for (var addon in item.addons!) {
-          printer.text('  + ${addon['name']} - ${addon['options']['label']}',
-              styles: const PosStyles(fontType: PosFontType.fontB));
+          try {
+            final name = addon['name'] ?? 'Unknown';
+            String label = '';
+
+            if (addon['options'] != null) {
+              if (addon['options'] is Map) {
+                label = addon['options']['label'] ?? addon['options']['name'] ?? '';
+              } else if (addon['options'] is String) {
+                label = addon['options'];
+              }
+            }
+
+            final text = label.isNotEmpty ? '  + $name - $label' : '  + $name';
+            printer.text(text, styles: const PosStyles(fontType: PosFontType.fontB));
+          } catch (e) {
+            if (kDebugMode) print('⚠️ Error printing addon: $e');
+            printer.text('  + ${addon['name'] ?? 'Unknown'}',
+                styles: const PosStyles(fontType: PosFontType.fontB));
+          }
         }
       }
 
+      // ✅ FIXED: Safe topping parsing
       if (item.toppings != null && item.toppings!.isNotEmpty) {
         for (var topping in item.toppings!) {
-          printer.text('  + ${topping['name']} - ${topping['options']['label']}',
-              styles: const PosStyles(fontType: PosFontType.fontB));
+          try {
+            final name = topping['name'] ?? 'Unknown';
+            String label = '';
+
+            if (topping['options'] != null) {
+              if (topping['options'] is Map) {
+                label = topping['options']['label'] ?? topping['options']['name'] ?? '';
+              } else if (topping['options'] is String) {
+                label = topping['options'];
+              }
+            }
+
+            final text = label.isNotEmpty ? '  + $name - $label' : '  + $name';
+            printer.text(text, styles: const PosStyles(fontType: PosFontType.fontB));
+          } catch (e) {
+            if (kDebugMode) print('⚠️ Error printing topping: $e');
+            printer.text('  + ${topping['name'] ?? 'Unknown'}',
+                styles: const PosStyles(fontType: PosFontType.fontB));
+          }
         }
       }
 
@@ -724,6 +794,9 @@ class ThermalPrintService {
     printer.cut();
   }
 
+  // ============================================
+  // ✅ FIXED: _generateReceiptBytesForItems (Bluetooth)
+  // ============================================
   Future<List<int>> _generateReceiptBytesForItems(Generator generator, Order order, List<OrderItem> itemsToPrint, {bool isOpenBill = false}) async {
     final List<int> bytes = [];
 
@@ -798,15 +871,19 @@ class ThermalPrintService {
       final itemNameWithService = '${item.name} (${order.service}) x${item.qty}';
       bytes.addAll(generator.text(itemNameWithService, styles: const PosStyles(bold: true)));
 
+      // ✅ FIXED: Safe addon parsing
       if (item.addons != null && item.addons!.isNotEmpty) {
         for (var addon in item.addons!) {
-          bytes.addAll(generator.text('  + ${addon['name']} - ${addon['options']['label']}'));
+          final addonText = _getSafeAddonText(addon);
+          bytes.addAll(generator.text(addonText));
         }
       }
 
+      // ✅ FIXED: Safe topping parsing
       if (item.toppings != null && item.toppings!.isNotEmpty) {
         for (var topping in item.toppings!) {
-          bytes.addAll(generator.text('  + ${topping['name']} - ${topping['options']['label']}'));
+          final toppingText = _getSafeAddonText(topping);
+          bytes.addAll(generator.text(toppingText));
         }
       }
 
@@ -851,15 +928,19 @@ class ThermalPrintService {
 
     final List<String> logIds = [];
     for (final item in order.items) {
-      final stockInfo = await _checkItemStock(item);
-      final logId = await PrintTrackingService().logPrintAttempt(
-          order.orderId!,
-          _convertOrderItemToMap(item),
-          workstation,
-          printerConfig,
-          stockInfo
-      );
-      if (logId != null) logIds.add(logId);
+      try {
+        final stockInfo = await _checkItemStock(item);
+        final logId = await PrintTrackingService().logPrintAttempt(
+            order.orderId!,
+            _convertOrderItemToMap(item),
+            workstation,
+            printerConfig,
+            stockInfo
+        );
+        if (logId != null) logIds.add(logId);
+      } catch (e) {
+        if (kDebugMode) print('⚠️ Failed to log print attempt: $e');
+      }
     }
 
     final startTime = DateTime.now();
@@ -868,22 +949,34 @@ class ThermalPrintService {
       final success = await printOrder(order);
 
       if (success) {
-        final duration = DateTime.now().difference(startTime).inMilliseconds;
-        for (final logId in logIds) {
-          await PrintTrackingService().logPrintSuccess(logId, duration, wasProblematic: false);
+        try {
+          final duration = DateTime.now().difference(startTime).inMilliseconds;
+          for (final logId in logIds) {
+            await PrintTrackingService().logPrintSuccess(logId, duration, wasProblematic: false);
+          }
+        } catch (e) {
+          if (kDebugMode) print('⚠️ Failed to log success: $e');
         }
       } else {
-        for (final logId in logIds) {
-          await PrintTrackingService().logPrintFailure(
-              logId, 'printer_not_configured', 'Manual print gagal'
-          );
+        try {
+          for (final logId in logIds) {
+            await PrintTrackingService().logPrintFailure(
+                logId, 'printer_not_configured', 'Manual print gagal'
+            );
+          }
+        } catch (e) {
+          if (kDebugMode) print('⚠️ Failed to log failure: $e');
         }
       }
 
       return success;
     } catch (e) {
-      for (final logId in logIds) {
-        await PrintTrackingService().logPrintFailure(logId, 'unknown_error', e.toString());
+      try {
+        for (final logId in logIds) {
+          await PrintTrackingService().logPrintFailure(logId, 'unknown_error', e.toString());
+        }
+      } catch (e2) {
+        if (kDebugMode) print('⚠️ Failed to log error: $e2');
       }
       rethrow;
     }
@@ -980,6 +1073,9 @@ class ThermalPrintService {
     }
   }
 
+  // ============================================
+  // ✅ FIXED: _generateReceipt (WiFi - full order)
+  // ============================================
   Future<void> _generateReceipt(NetworkPrinter printer, Order order) async {
     if (kDebugMode) print('🖨️ Generating full receipt');
 
@@ -1057,17 +1153,53 @@ class ThermalPrintService {
       final itemNameWithService = '${item.name} (${order.service}) x${item.qty}';
       printer.text(itemNameWithService, styles: const PosStyles(bold: true));
 
+      // ✅ FIXED: Safe addon parsing
       if (item.addons != null && item.addons!.isNotEmpty) {
         for (var addon in item.addons!) {
-          printer.text('  + ${addon['name']} - ${addon['options']['label']}',
-              styles: const PosStyles(fontType: PosFontType.fontB));
+          try {
+            final name = addon['name'] ?? 'Unknown';
+            String label = '';
+
+            if (addon['options'] != null) {
+              if (addon['options'] is Map) {
+                label = addon['options']['label'] ?? addon['options']['name'] ?? '';
+              } else if (addon['options'] is String) {
+                label = addon['options'];
+              }
+            }
+
+            final text = label.isNotEmpty ? '  + $name - $label' : '  + $name';
+            printer.text(text, styles: const PosStyles(fontType: PosFontType.fontB));
+          } catch (e) {
+            if (kDebugMode) print('⚠️ Error printing addon: $e');
+            printer.text('  + ${addon['name'] ?? 'Unknown'}',
+                styles: const PosStyles(fontType: PosFontType.fontB));
+          }
         }
       }
 
+      // ✅ FIXED: Safe topping parsing
       if (item.toppings != null && item.toppings!.isNotEmpty) {
         for (var topping in item.toppings!) {
-          printer.text('  + ${topping['name']} - ${topping['options']['label']}',
-              styles: const PosStyles(fontType: PosFontType.fontB));
+          try {
+            final name = topping['name'] ?? 'Unknown';
+            String label = '';
+
+            if (topping['options'] != null) {
+              if (topping['options'] is Map) {
+                label = topping['options']['label'] ?? topping['options']['name'] ?? '';
+              } else if (topping['options'] is String) {
+                label = topping['options'];
+              }
+            }
+
+            final text = label.isNotEmpty ? '  + $name - $label' : '  + $name';
+            printer.text(text, styles: const PosStyles(fontType: PosFontType.fontB));
+          } catch (e) {
+            if (kDebugMode) print('⚠️ Error printing topping: $e');
+            printer.text('  + ${topping['name'] ?? 'Unknown'}',
+                styles: const PosStyles(fontType: PosFontType.fontB));
+          }
         }
       }
 
@@ -1101,6 +1233,9 @@ class ThermalPrintService {
     printer.cut();
   }
 
+  // ============================================
+  // ✅ FIXED: _generateReceiptBytes (Bluetooth - full order)
+  // ============================================
   Future<List<int>> _generateReceiptBytes(Generator generator, Order order) async {
     final List<int> bytes = [];
 
@@ -1159,15 +1294,19 @@ class ThermalPrintService {
       final itemNameWithService = '${item.name} (${order.service}) x${item.qty}';
       bytes.addAll(generator.text(itemNameWithService, styles: const PosStyles(bold: true)));
 
+      // ✅ FIXED: Safe addon parsing
       if (item.addons != null && item.addons!.isNotEmpty) {
         for (var addon in item.addons!) {
-          bytes.addAll(generator.text('  + ${addon['name']} - ${addon['options']['label']}'));
+          final addonText = _getSafeAddonText(addon);
+          bytes.addAll(generator.text(addonText));
         }
       }
 
+      // ✅ FIXED: Safe topping parsing
       if (item.toppings != null && item.toppings!.isNotEmpty) {
         for (var topping in item.toppings!) {
-          bytes.addAll(generator.text('  + ${topping['name']} - ${topping['options']['label']}'));
+          final toppingText = _getSafeAddonText(topping);
+          bytes.addAll(generator.text(toppingText));
         }
       }
 
