@@ -131,39 +131,47 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                   children: [
                     Row(
                       children: [
-                        Text(
-                          '${widget.order.orderId ?? 'N/A'} -',
-                          style: const TextStyle(
-                            color: Colors.black87,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
+                        Flexible(
+                          child: Text(
+                            '${widget.order.orderId ?? 'N/A'} -',
+                            style: const TextStyle(
+                              color: Colors.black87,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: _badgeColor,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: _cardColor.withOpacity(0.3),
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min, // Ini yang bikin pas sesuai konten
-                            children: [
-                              Icon(Icons.person_outline, size: 14, color: _cardColor),
-                              const SizedBox(width: 4),
-                              Text(
-                                widget.order.name,
-                                style: TextStyle(
-                                  color: _cardColor,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: _badgeColor,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: _cardColor.withOpacity(0.3),
+                                width: 1,
                               ),
-                            ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.person_outline, size: 14, color: _cardColor),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    widget.order.name,
+                                    style: TextStyle(
+                                      color: _cardColor,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],

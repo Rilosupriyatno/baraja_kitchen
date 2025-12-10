@@ -19,6 +19,9 @@ import '../widgets/table_stockmenu.dart';
 import '../widgets/unified_stock_screen_backup.dart';
 import 'device_selection_screen.dart';
 import 'batch_cooking_screen.dart';
+import '../widgets/digital_clock_widget.dart';
+import '../widgets/order_list_item.dart';
+import '../widgets/order_detail_panel.dart';
 
 class WorkstationDashboard extends StatefulWidget {
   final Device selectedDevice; // ✅ UPDATED: Only use Device object
@@ -44,10 +47,10 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
   bool _isLoading = false;
   String? _errorMessage;
   int _selectedTabIndex = 0;
+  String? _selectedOrderId; // For 3-column layout
 
   late Timer _mainTimer;
   late Timer _refreshTimer;
-  DateTime _currentTime = DateTime.now();
 
   final Map<String, bool> _alertPlayedMap = {};
   final NotificationService _notificationService = NotificationService();
@@ -57,6 +60,141 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
   List<OutOfStockItem> _outOfStockItems = [];
   Timer? _stockCheckTimer;
   bool _autoPrintEnabled = true;
+
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  // Method to build actions drawer content
+  Widget _buildActionsDrawer() {
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: brandColor.withOpacity(0.05),
+                border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.settings, color: brandColor, size: 20),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Pengaturan & Aksi',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                children: [
+                  // Status badges section
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text(
+                      'Status',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildDeviceBadge(),
+                        if (_printService.isConfigured) _buildPrinterStatusBadge(),
+                        if (_printService.isConfigured) _buildAutoPrintBadge(),
+                        if (_notificationService.queueLength > 0) _buildNotificationBadge(),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 32),
+                  // Actions
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text(
+                      'Aksi',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.print, color: brandColor),
+                    title: const Text('Pengaturan Printer'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showPrinterSettings();
+                    },
+                  ),
+                  if (_outOfStockItems.isNotEmpty)
+                    ListTile(
+                      leading: Icon(Icons.inventory_2_outlined, color: Colors.red.shade700),
+                      title: const Text('Stok Habis/Kritis'),
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade600,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${_outOfStockItems.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showOutOfStockDialog();
+                      },
+                    ),
+                  ListTile(
+                    leading: Icon(Icons.refresh, color: brandColor),
+                    title: const Text('Refresh Data'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      if (!_isLoading) _loadOrders();
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.exit_to_app, color: brandColor),
+                    title: const Text('Ganti Perangkat'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _backToDeviceSelection();
+                    },
+                  ),
+                  const Divider(height: 32),
+                  // Time display
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: DigitalClockWidget(color: brandColor),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
 
   String get workstationType => widget.selectedDevice.workstationTypeString;
@@ -518,9 +656,9 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
   }
 
   void _initializeTimers() {
+    // Timer for checking late orders only - no setState for time
     _mainTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
-        setState(() => _currentTime = DateTime.now());
         _checkForLateOrders();
       }
     });
@@ -940,24 +1078,141 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        double cardWidth = constraints.maxWidth - 48;
-        if (constraints.maxWidth > 800) {
-          cardWidth = (constraints.maxWidth - 48 - 16) / 2;
+        final isTablet = constraints.maxWidth >= 900;
+        
+        // Tablet: 3-column layout
+        if (isTablet) {
+          return Row(
+            children: [
+              // Column 2: Order List (increased width for better proportion)
+              SizedBox(
+                width: 400,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border(right: BorderSide(color: Colors.grey.shade200)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          '${filteredOrders.length} Orders',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          itemCount: filteredOrders.length,
+                          itemBuilder: (context, index) {
+                            final order = filteredOrders[index];
+                            final isSelected = _selectedOrderId == order.orderId;
+                            
+                            return OrderListItem(
+                              order: order,
+                              queueNumber: showTimer && !isFinished ? index + 1 : index + 1,
+                              isSelected: isSelected,
+                              onTap: () {
+                                setState(() {
+                                  _selectedOrderId = order.orderId;
+                                });
+                              },
+                              brandColor: brandColor,
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Column 3: Detail Panel (constrained width)
+              Expanded(
+                child: Center(
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 500),
+                    padding: const EdgeInsets.all(16),
+                    child: Builder(
+                    builder: (context) {
+                      // Auto-select first order if none selected
+                      if (_selectedOrderId == null && filteredOrders.isNotEmpty) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) {
+                            setState(() {
+                              _selectedOrderId = filteredOrders.first.orderId;
+                            });
+                          }
+                        });
+                      }
+                      
+                      Order? selectedOrder;
+                      int? selectedIndex;
+                      
+                      if (_selectedOrderId != null) {
+                        selectedIndex = filteredOrders.indexWhere((o) => o.orderId == _selectedOrderId);
+                        if (selectedIndex != -1) {
+                          selectedOrder = filteredOrders[selectedIndex];
+                        }
+                      }
+                      
+                      return OrderDetailPanel(
+                        order: selectedOrder,
+                        queueNumber: showTimer && !isFinished && selectedIndex != null && selectedIndex != -1
+                            ? selectedIndex + 1
+                            : null,
+                        brandColor: brandColor,
+                        showTimer: showTimer && !isFinished,
+                        onComplete: showTimer && !isFinished && selectedOrder != null
+                            ? () => _completeOrder(selectedOrder!)
+                            : null,
+                        onReprint: selectedOrder != null
+                            ? () async {
+                                final success = await _printService.manualPrint(selectedOrder!);
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Row(
+                                        children: [
+                                          Icon(success ? Icons.check_circle : Icons.error, color: Colors.white),
+                                          const SizedBox(width: 8),
+                                          Text(success ? 'Berhasil print ulang' : 'Gagal print, cek koneksi printer'),
+                                        ],
+                                      ),
+                                      backgroundColor: success ? brandColor : Colors.red,
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
+                              }
+                            : null,
+                      );
+                    },
+                  ),
+                ),
+              ),
+              )],
+          );
         }
+        
+        // Mobile: Card-based layout with fixed width
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: filteredOrders.length,
+          itemBuilder: (context, index) {
+            final order = filteredOrders[index];
+            final isExpanded = _expandedOrders[order.orderId] ?? false;
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Wrap(
-            spacing: 16,
-            runSpacing: 16,
-            children: filteredOrders.asMap().entries.map((entry) {
-              final index = entry.key;
-              final order = entry.value;
-              final isExpanded = _expandedOrders[order.orderId] ?? false;
-
-              return SizedBox(
-                width: cardWidth,
+            return RepaintBoundary(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 16),
                 child: OrderCardCompact(
+                  key: ValueKey(order.orderId),
                   order: order,
                   isExpanded: isExpanded,
                   showTimer: showTimer,
@@ -985,24 +1240,61 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
                     }
                   },
                 ),
-              );
-            }).toList(),
-          ),
+              ),
+            );
+          },
         );
       },
     );
   }
 
-  Widget _buildSidebar() {
+  Widget _buildSidebar({bool isMobile = false}) {
     return SingleChildScrollView(
       child: Container(
-        width: 200,
+        width: isMobile ? null : 240,
         decoration: BoxDecoration(
           color: Colors.white,
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(2, 0))],
+          boxShadow: isMobile ? [] : [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(2, 0))],
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Mobile: Show badges section at top
+            if (isMobile) ...[ 
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: brandColor.withOpacity(0.05),
+                  border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Status & Info',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildDeviceBadge(),
+                        if (_printService.isConfigured) _buildPrinterStatusBadge(),
+                        if (_printService.isConfigured) _buildAutoPrintBadge(),
+                        if (_notificationService.queueLength > 0) _buildNotificationBadge(),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+            ],
+            // Menu tabs
             _buildSidebarTab(0, 'Penyiapan', preparing.length),
             _buildSidebarTab(1, 'Batch Cook', preparing.length),
             _buildSidebarTab(2, 'Selesai', done.length),
@@ -1027,6 +1319,10 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
       onTap: () {
         setState(() => _selectedTabIndex = index);
         if (index == 5) _navigateToCategories();
+        // Close drawer on mobile after selection
+        if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+          Navigator.pop(context);
+        }
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
@@ -1130,13 +1426,24 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
     // ✅ UPDATED: Use device name for title
     final titleText = displayHeader;
 
+    final isMobile = MediaQuery.of(context).size.width < 900;
+
     return Scaffold(
+      key: _scaffoldKey,
       appBar: AppBar(
         elevation: 1,
         toolbarHeight: 70,
         backgroundColor: appBarColor,
         automaticallyImplyLeading: false,
-        title: Row(
+        leading: isMobile ? IconButton(
+          icon: const Icon(Icons.menu, color: Colors.white),
+          onPressed: () {
+            _scaffoldKey.currentState?.openDrawer();
+          },
+        ) : null,
+        title: isMobile ? Center(
+          child: _buildDeviceBadge(),
+        ) : Row(
           children: [
             Container(
               padding: const EdgeInsets.all(8),
@@ -1177,30 +1484,41 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
                 ],
               ),
             ),
-            _buildStatusBadge(),
-            _buildDeviceBadge(),
-            if (_printService.isConfigured) _buildPrinterStatusBadge(),
-            if (_printService.isConfigured) _buildAutoPrintBadge(),
-            if (_notificationService.queueLength > 0) _buildNotificationBadge(),
-            _buildIconButton(Icons.print, _showPrinterSettings, 'Pengaturan Printer'),
-            const SizedBox(width: 8),
-            if (_outOfStockItems.isNotEmpty) _buildStockBadge(),
-            const SizedBox(width: 8),
-            _buildIconButton(Icons.refresh, _isLoading ? null : _loadOrders, 'Refresh'),
-            const SizedBox(width: 8),
-            _buildBackButton(),
-            const SizedBox(width: 8),
-            _buildTimeBadge(),
+            if (!isMobile) _buildDeviceBadge(),
+            if (!isMobile && _printService.isConfigured) _buildPrinterStatusBadge(),
+            if (!isMobile && _printService.isConfigured) _buildAutoPrintBadge(),
+            if (!isMobile && _notificationService.queueLength > 0) _buildNotificationBadge(),
+            if (!isMobile) _buildIconButton(Icons.print, _showPrinterSettings, 'Pengaturan Printer'),
+            if (!isMobile) const SizedBox(width: 8),
+            if (!isMobile && _outOfStockItems.isNotEmpty) _buildStockBadge(),
+            if (!isMobile && _outOfStockItems.isNotEmpty) const SizedBox(width: 8),
+            if (!isMobile) _buildIconButton(Icons.refresh, _isLoading ? null : _loadOrders, 'Refresh'),
+            if (!isMobile) const SizedBox(width: 8),
+            if (!isMobile) _buildBackButton(),
+            if (!isMobile) const SizedBox(width: 8),
+            if (!isMobile) const DigitalClockWidget(color: brandColor),
           ],
         ),
+        actions: isMobile ? [
+          IconButton(
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            onPressed: () {
+              _scaffoldKey.currentState?.openEndDrawer();
+            },
+          ),
+        ] : null,
       ),
+      drawer: isMobile ? Drawer(
+        child: _buildSidebar(isMobile: true),
+      ) : null,
+      endDrawer: isMobile ? _buildActionsDrawer() : null,
       body: _isLoading
           ? _buildLoadingWidget()
           : _errorMessage != null
           ? _buildErrorWidget()
           : Row(
         children: [
-          _buildSidebar(),
+          if (!isMobile) _buildSidebar(),
           Expanded(
             child: Container(
               color: const Color(0xFFF9FAFB),
@@ -1360,19 +1678,6 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
     );
   }
 
-  Widget _buildTimeBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
-      child: Row(
-        children: [
-          const Icon(Icons.access_time, color: brandColor, size: 18),
-          const SizedBox(width: 6),
-          Text(DateFormat('HH:mm:ss').format(_currentTime), style: const TextStyle(color: brandColor, fontWeight: FontWeight.w600, fontSize: 15)),
-        ],
-      ),
-    );
-  }
 }
 
 // Keep the existing _PrinterSettingsDialog class unchanged
