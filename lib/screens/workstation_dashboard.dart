@@ -16,7 +16,7 @@ import '../widgets/order_card_compact.dart';
 import 'package:flutter/foundation.dart' hide Category;
 import '../widgets/out_of_stock_dialog.dart';
 import '../widgets/table_stockmenu.dart';
-import '../widgets/unified_stock_screen_backup.dart';
+import 'unified_stock_screen.dart';
 import 'device_selection_screen.dart';
 import 'batch_cooking_screen.dart';
 import '../widgets/digital_clock_widget.dart';

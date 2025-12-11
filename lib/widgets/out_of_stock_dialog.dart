@@ -1,5 +1,5 @@
 // widgets/out_of_stock_dialog.dart
-import '../widgets/unified_stock_screen_backup.dart';
+import '../screens/unified_stock_screen.dart';
 import 'package:flutter/material.dart';
 import '../models/out_of_stock_model.dart';
 

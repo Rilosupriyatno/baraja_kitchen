@@ -1,4 +1,5 @@
 // screens/unified_stock_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/stockmenu_service.dart';
 import '../services/stock_cache_manager.dart';
@@ -43,6 +44,10 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
   double _loadingProgress = 0.0;
   String _loadingMessage = '';
 
+  // Continue load state
+  bool _canContinueLoad = false;
+  int _lastLoadedCategoryIndex = -1;
+
   final TextEditingController _searchController = TextEditingController();
   final Color _brandColor = Color(0xFF077A4B);
 
@@ -51,15 +56,29 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
 
   final _cacheManager = StockCacheManager();
 
+  // Debounce timer untuk search
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
     _loadData();
-    _searchController.addListener(_filterMenus);
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    print('🔍 Search changed: "${_searchController.text}"');
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      print('⏱️ Debounce completed, calling _filterMenus()');
+      _filterMenus();
+    });
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _categoryScrollController.dispose();
     _menuScrollController.dispose();
@@ -122,37 +141,51 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
     }
   }
 
-  Future<void> _loadAllDataFromServer() async {
+  Future<void> _loadAllDataFromServer({bool isContinue = false}) async {
     setState(() {
       _isInitialLoading = true;
-      _loadingProgress = 0.0;
-      _loadingMessage = 'Memuat kategori...';
+      if (!isContinue) {
+        _loadingProgress = 0.0;
+        _lastLoadedCategoryIndex = -1;
+      }
+      _loadingMessage = isContinue ? 'Melanjutkan download...' : 'Memuat kategori...';
+      _canContinueLoad = false;
     });
 
     try {
-      final categories = await StockMenuService.getCategoriesByWorkstation(widget.workstation);
-      categories.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      // Load categories jika belum ada atau bukan continue
+      if (_categories.isEmpty || !isContinue) {
+        final categories = await StockMenuService.getCategoriesByWorkstation(widget.workstation);
+        categories.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+        if (mounted) {
+          setState(() {
+            _categories = categories;
+            _loadingProgress = 0.1;
+          });
+        }
+
+        _cacheManager.saveCategories(widget.workstation, categories);
+
+        if (!isContinue) {
+          _menuCache.clear();
+        }
+      }
+
+      final totalCategories = _categories.length;
+      final startIndex = isContinue ? _lastLoadedCategoryIndex + 1 : 0;
 
       if (mounted) {
         setState(() {
-          _categories = categories;
-          _loadingProgress = 0.1;
+          _loadingMessage = isContinue
+              ? 'Melanjutkan dari kategori ${startIndex + 1}/$totalCategories...'
+              : 'Memuat semua menu...';
         });
       }
 
-      _cacheManager.saveCategories(widget.workstation, categories);
-      _menuCache.clear();
-      final totalCategories = categories.length;
-
-      if (mounted) {
-        setState(() {
-          _loadingMessage = 'Memuat semua menu...';
-        });
-      }
-
-      final menuFutures = categories.asMap().entries.map((entry) async {
-        final index = entry.key;
-        final category = entry.value;
+      // Load menu per kategori dengan error handling
+      for (int index = startIndex; index < totalCategories; index++) {
+        final category = _categories[index];
 
         try {
           final categoryWithMenus = await StockMenuService.getMenusByCategoryAndWorkstation(
@@ -163,62 +196,160 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
           final menus = categoryWithMenus.menus;
           menus.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
+          _menuCache[category.id] = menus;
+
+          // Save progress ke cache setiap kategori berhasil
+          _cacheManager.saveMenus(widget.workstation, category.id, menus);
+
           if (mounted) {
             setState(() {
+              _lastLoadedCategoryIndex = index;
               _loadingProgress = 0.1 + (0.9 * ((index + 1) / totalCategories));
               _loadingMessage = 'Memuat menu... (${index + 1}/$totalCategories)';
             });
           }
-
-          return MapEntry(category.id, menus);
         } catch (e) {
-          return MapEntry(category.id, <StockMenu>[]);
+          print('❌ Error loading category ${category.name}: $e');
+
+          // Jika error, set flag untuk bisa continue
+          if (mounted) {
+            setState(() {
+              _canContinueLoad = true;
+              _isInitialLoading = false;
+            });
+          }
+
+          // Show dialog untuk continue atau retry
+          if (mounted) {
+            final shouldContinue = await _showContinueDialog(
+              'Koneksi terputus saat memuat kategori "${category.name}".\n'
+                  'Progress: ${index + 1}/$totalCategories kategori',
+            );
+
+            if (shouldContinue) {
+              // Continue loading
+              await _loadAllDataFromServer(isContinue: true);
+              return;
+            } else {
+              // Cancel, tampilkan data yang sudah ada
+              _finalizeLoading();
+              return;
+            }
+          }
+          return;
         }
-      }).toList();
-
-      final results = await Future.wait(menuFutures);
-
-      for (var entry in results) {
-        _menuCache[entry.key] = entry.value;
       }
 
+      // Jika semua berhasil
       _cacheManager.saveAllMenus(widget.workstation, Map.from(_menuCache));
       _cacheManager.markAsLoaded(widget.workstation);
 
-      if (mounted) {
-        setState(() {
-          _loadingProgress = 1.0;
-          _loadingMessage = 'Selesai!';
-          _isInitialLoading = false;
-
-          if (widget.preSelectedCategoryId != null && categories.isNotEmpty) {
-            try {
-              _selectedCategory = categories.firstWhere(
-                    (cat) => cat.id == widget.preSelectedCategoryId,
-              );
-            } catch (e) {
-              _selectedCategory = categories.first;
-            }
-          } else if (categories.isNotEmpty) {
-            _selectedCategory = categories.first;
-          }
-
-          _displayMenusFromCache();
-
-          if (widget.preSelectedCategoryId != null && _selectedCategory != null) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _scrollToSelectedCategory();
-            });
-          }
-        });
-      }
+      _finalizeLoading();
     } catch (e) {
+      print('❌ Error in _loadAllDataFromServer: $e');
+
       if (mounted) {
         setState(() {
+          _canContinueLoad = _lastLoadedCategoryIndex >= 0;
           _isInitialLoading = false;
         });
+
+        if (_canContinueLoad) {
+          final shouldContinue = await _showContinueDialog(
+            'Terjadi kesalahan saat memuat data.\n'
+                'Progress: ${_lastLoadedCategoryIndex + 1}/${_categories.length} kategori',
+          );
+
+          if (shouldContinue) {
+            await _loadAllDataFromServer(isContinue: true);
+          } else {
+            _finalizeLoading();
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Gagal memuat data: ${e.toString()}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       }
     }
+  }
+
+  void _finalizeLoading() {
+    if (mounted) {
+      setState(() {
+        _loadingProgress = 1.0;
+        _loadingMessage = 'Selesai!';
+        _isInitialLoading = false;
+        _canContinueLoad = false;
+
+        if (widget.preSelectedCategoryId != null && _categories.isNotEmpty) {
+          try {
+            _selectedCategory = _categories.firstWhere(
+                  (cat) => cat.id == widget.preSelectedCategoryId,
+            );
+          } catch (e) {
+            _selectedCategory = _categories.first;
+          }
+        } else if (_categories.isNotEmpty) {
+          _selectedCategory = _categories.first;
+        }
+
+        _displayMenusFromCache();
+
+        if (widget.preSelectedCategoryId != null && _selectedCategory != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _scrollToSelectedCategory();
+          });
+        }
+      });
+    }
+  }
+
+  Future<bool> _showContinueDialog(String message) async {
+    return await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Download Terputus'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            const SizedBox(height: 16),
+            const Text(
+              'Anda dapat melanjutkan download dari posisi terakhir atau membatalkan untuk menggunakan data yang sudah tersedia.',
+              style: TextStyle(fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal & Gunakan Data'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Lanjutkan Download'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    ) ?? false;
   }
 
   Future<void> _refreshData() async {
@@ -228,6 +359,7 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
       _isRefreshing = true;
       _loadingProgress = 0.0;
       _loadingMessage = 'Memperbarui data...';
+      _lastLoadedCategoryIndex = -1;
     });
 
     try {
@@ -245,9 +377,8 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
       _menuCache.clear();
       final totalCategories = categories.length;
 
-      final menuFutures = categories.asMap().entries.map((entry) async {
-        final index = entry.key;
-        final category = entry.value;
+      for (int index = 0; index < totalCategories; index++) {
+        final category = categories[index];
 
         try {
           final categoryWithMenus = await StockMenuService.getMenusByCategoryAndWorkstation(
@@ -258,23 +389,18 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
           final menus = categoryWithMenus.menus;
           menus.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
+          _menuCache[category.id] = menus;
+
           if (mounted) {
             setState(() {
               _loadingProgress = 0.1 + (0.9 * ((index + 1) / totalCategories));
               _loadingMessage = 'Memperbarui... (${index + 1}/$totalCategories)';
             });
           }
-
-          return MapEntry(category.id, menus);
         } catch (e) {
-          return MapEntry(category.id, <StockMenu>[]);
+          print('❌ Error refreshing category ${category.name}: $e');
+          _menuCache[category.id] = [];
         }
-      }).toList();
-
-      final results = await Future.wait(menuFutures);
-
-      for (var entry in results) {
-        _menuCache[entry.key] = entry.value;
       }
 
       _cacheManager.saveAllMenus(widget.workstation, Map.from(_menuCache));
@@ -322,41 +448,52 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
 
   // UI Helper Methods
   void _displayMenusFromCache() {
-    if (_selectedCategory == null) return;
+    if (_selectedCategory == null) {
+      print('⚠️ _displayMenusFromCache called but no category selected');
+      return;
+    }
 
     final menus = _menuCache[_selectedCategory!.id] ?? [];
 
-    print('📋 Displaying ${menus.length} menus from cache');
+    print('📋 Displaying ${menus.length} menus from cache for category: ${_selectedCategory!.name}');
 
-    // Bersihkan controllers yang lama
-    for (var controller in _stockControllers.values) {
-      controller.dispose();
-    }
-    _stockControllers.clear();
+    // Hapus controllers untuk menu yang tidak ada lagi
+    final menuIds = menus.map((m) => m.menuItemId).toSet();
 
-    // Inisialisasi controller dengan nilai yang benar
-    for (var menu in menus) {
-      // Cek apakah menu ini ada di unsyncedChanges
-      int initialStock;
-      if (_unsyncedChanges.containsKey(menu.menuItemId)) {
-        // Jika ada di unsyncedChanges, gunakan newStock dari sana
-        initialStock = _unsyncedChanges[menu.menuItemId]!['newStock'];
-        print('  📝 ${menu.name}: using unsyncedChanges value = $initialStock');
-      } else {
-        // Jika tidak, gunakan manualStock dari menu
-        initialStock = menu.manualStock;
-        print('  📦 ${menu.name}: using cache value = $initialStock');
+    final controllersToRemove = <String>[];
+    _stockControllers.forEach((key, controller) {
+      if (!menuIds.contains(key)) {
+        controllersToRemove.add(key);
       }
-
-      _stockControllers[menu.menuItemId] = TextEditingController(
-        text: initialStock.toString(),
-      );
-    }
-
-    setState(() {
-      _filteredMenus = menus;
     });
 
+    for (var key in controllersToRemove) {
+      _stockControllers[key]?.dispose();
+      _stockControllers.remove(key);
+      print('   🗑️ Removed controller for: $key');
+    }
+
+    // Inisialisasi controller hanya untuk menu yang belum ada
+    for (var menu in menus) {
+      if (!_stockControllers.containsKey(menu.menuItemId)) {
+        int initialStock;
+        if (_unsyncedChanges.containsKey(menu.menuItemId)) {
+          initialStock = _unsyncedChanges[menu.menuItemId]!['newStock'];
+          print('   🔄 ${menu.name}: using unsyncedChanges value = $initialStock');
+        } else {
+          initialStock = menu.manualStock;
+          print('   📦 ${menu.name}: using cache value = $initialStock');
+        }
+
+        _stockControllers[menu.menuItemId] = TextEditingController(
+          text: initialStock.toString(),
+        );
+      }
+    }
+
+    print('   Total controllers: ${_stockControllers.length}');
+
+    // Langsung panggil filter untuk update filtered menus
     _filterMenus();
   }
 
@@ -368,22 +505,50 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
     // Hapus pending updates untuk item yang sudah tidak ada di unsyncedChanges
     _pendingUpdates.removeWhere((key, value) => !_unsyncedChanges.containsKey(key));
 
-    // Refresh display untuk update controller values
-    _displayMenusFromCache();
+    // Update controller values untuk menu yang ada di unsyncedChanges
+    for (var entry in _unsyncedChanges.entries) {
+      final menuId = entry.key;
+      final newStock = entry.value['newStock'];
+
+      if (_stockControllers.containsKey(menuId)) {
+        _stockControllers[menuId]!.text = newStock.toString();
+      }
+    }
+
+    // Refresh filtered menus
+    _filterMenus();
   }
 
   void _filterMenus() {
-    if (_selectedCategory == null) return;
+    if (_selectedCategory == null) {
+      print('⚠️ _filterMenus called but no category selected');
+      return;
+    }
 
     final menus = _menuCache[_selectedCategory!.id] ?? [];
-    final query = _searchController.text.toLowerCase();
+    final query = _searchController.text.toLowerCase().trim();
+
+    print('🔍 Filtering menus:');
+    print('   Category: ${_selectedCategory!.name}');
+    print('   Query: "$query"');
+    print('   Total menus in cache: ${menus.length}');
+    print('   _filteredMenus before: ${_filteredMenus.length}');
 
     setState(() {
       if (query.isEmpty) {
         _filteredMenus = menus;
+        print('   ✅ No filter applied, showing all ${menus.length} menus');
       } else {
-        _filteredMenus = menus.where((menu) => menu.name.toLowerCase().contains(query)).toList();
+        _filteredMenus = menus.where((menu) {
+          final matches = menu.name.toLowerCase().contains(query);
+          if (matches) {
+            print('   ✓ Match found: ${menu.name}');
+          }
+          return matches;
+        }).toList();
+        print('   ✅ Filter applied, showing ${_filteredMenus.length} menus');
       }
+      print('   _filteredMenus after: ${_filteredMenus.length}');
     });
   }
 
@@ -423,12 +588,44 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
         _selectedMenuIds.add(menuItemId);
       }
     });
+
+    print('🔘 Selection toggled: $menuItemId');
+    print('🔘 Selected IDs: $_selectedMenuIds');
+    print('⏳ Pending updates: $_pendingUpdates');
   }
 
   void _updatePendingStock(String menuItemId, int newStock) {
+    print('📝 Update pending stock: $menuItemId = $newStock');
+
+    final allMenus = _menuCache[_selectedCategory?.id] ?? [];
+    final menu = allMenus.cast<StockMenu?>().firstWhere(
+          (m) => m?.menuItemId == menuItemId,
+      orElse: () => null,
+    );
+
+    if (menu == null) {
+      print('   ⚠️ Menu not found in cache: $menuItemId');
+      return;
+    }
+
+    final originalStock = _unsyncedChanges.containsKey(menuItemId)
+        ? _unsyncedChanges[menuItemId]!['oldStock'] as int
+        : menu.manualStock;
+
+    print('   Original stock: $originalStock');
+    print('   New stock: $newStock');
+
     setState(() {
-      _pendingUpdates[menuItemId] = newStock;
+      if (newStock != originalStock) {
+        _pendingUpdates[menuItemId] = newStock;
+        print('   ✅ Added to pending updates');
+      } else {
+        _pendingUpdates.remove(menuItemId);
+        print('   🗑️ Removed from pending (same as original)');
+      }
     });
+
+    print('   Total pending: ${_pendingUpdates.length}');
   }
 
   Future<void> _saveToCache() async {
@@ -442,13 +639,36 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
       return;
     }
 
+    print('💾 Starting save process...');
+    print('   Pending updates: ${_pendingUpdates.length}');
+    print('   Selected category: ${_selectedCategory?.id}');
+
     final timestamp = DateTime.now();
+    int savedCount = 0;
+    int skippedCount = 0;
+
+    final allMenus = _menuCache[_selectedCategory!.id] ?? [];
+    final menuMap = <String, StockMenu>{};
+    for (var menu in allMenus) {
+      menuMap[menu.menuItemId] = menu;
+    }
+
+    print('   Menu cache size: ${allMenus.length}');
+    print('   Menu map size: ${menuMap.length}');
 
     for (var entry in _pendingUpdates.entries) {
       final menuItemId = entry.key;
       final newStock = entry.value;
 
-      final menu = _filteredMenus.firstWhere((m) => m.menuItemId == menuItemId);
+      print('   Processing: $menuItemId -> $newStock');
+
+      final menu = menuMap[menuItemId];
+
+      if (menu == null) {
+        print('   ⚠️ Menu dengan ID $menuItemId tidak ditemukan dalam cache');
+        skippedCount++;
+        continue;
+      }
 
       final oldStock = _unsyncedChanges.containsKey(menuItemId)
           ? _unsyncedChanges[menuItemId]!['oldStock']
@@ -463,35 +683,49 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
 
       menu.manualStock = newStock;
       _cacheManager.updateMenuItem(widget.workstation, _selectedCategory!.id, menu);
+      savedCount++;
+
+      print('   ✅ Saved: ${menu.name} ($oldStock -> $newStock)');
     }
+
+    print('💾 Save complete: $savedCount saved, $skippedCount skipped');
 
     setState(() {
       _selectedMenuIds.clear();
       _pendingUpdates.clear();
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${_unsyncedChanges.length} perubahan disimpan ke data sementara'),
-        backgroundColor: Colors.green,
-        action: SnackBarAction(
-          label: 'Lihat',
-          textColor: Colors.white,
-          onPressed: () => showUnsyncedChangesDialog(
-            context: context,
-            unsyncedChanges: _unsyncedChanges,
-            onUpdate: () {
-              setState(() {});
-              _refreshControllers();
-            },
-            onRefresh: _refreshData,
-            cacheManager: _cacheManager,
-            workstation: widget.workstation,
-            currentCategoryId: _selectedCategory?.id,
+    if (savedCount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$savedCount perubahan disimpan ke data sementara${skippedCount > 0 ? ' ($skippedCount dilewati)' : ''}'),
+          backgroundColor: Colors.green,
+          action: SnackBarAction(
+            label: 'Lihat',
+            textColor: Colors.white,
+            onPressed: () => showUnsyncedChangesDialog(
+              context: context,
+              unsyncedChanges: _unsyncedChanges,
+              onUpdate: () {
+                setState(() {});
+                _refreshControllers();
+              },
+              onRefresh: _refreshData,
+              cacheManager: _cacheManager,
+              workstation: widget.workstation,
+              currentCategoryId: _selectedCategory?.id,
+            ),
           ),
         ),
-      ),
-    );
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Tidak ada perubahan yang berhasil disimpan${skippedCount > 0 ? ' ($skippedCount menu tidak ditemukan)' : ''}'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
   }
 
   @override
@@ -503,6 +737,9 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
         loadingProgress: _loadingProgress,
         loadingMessage: _loadingMessage,
         brandColor: _brandColor,
+        canContinue: _canContinueLoad,
+        onContinue: _canContinueLoad ? () => _loadAllDataFromServer(isContinue: true) : null,
+        onCancel: _canContinueLoad ? _finalizeLoading : null,
       );
     }
 
@@ -651,13 +888,22 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
                           color: Colors.white,
                           child: TextField(
                             controller: _searchController,
+                            onChanged: (value) {
+                              print('📝 TextField onChanged: "$value"');
+                              // Trigger rebuild untuk update suffixIcon
+                              setState(() {});
+                            },
                             decoration: InputDecoration(
                               hintText: 'Cari menu...',
                               prefixIcon: const Icon(Icons.search),
                               suffixIcon: _searchController.text.isNotEmpty
                                   ? IconButton(
                                 icon: const Icon(Icons.clear),
-                                onPressed: () => _searchController.clear(),
+                                onPressed: () {
+                                  print('🗑️ Clear button pressed');
+                                  _searchController.clear();
+                                  setState(() {});
+                                },
                               )
                                   : null,
                               border: OutlineInputBorder(
@@ -686,14 +932,16 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
                   EditPanelWidget(
                     width: editWidth.clamp(200.0, 350.0),
                     selectedMenuIds: _selectedMenuIds,
-                    filteredMenus: _filteredMenus,
                     stockControllers: _stockControllers,
                     pendingUpdates: _pendingUpdates,
                     unsyncedChanges: _unsyncedChanges,
+                    menuCache: _menuCache,
+                    selectedCategoryId: _selectedCategory?.id,
                     workstation: widget.workstation,
                     brandColor: _brandColor,
                     onUpdateStock: _updatePendingStock,
                     onClearSelection: () {
+                      print('🗑️ Clearing selection...');
                       setState(() {
                         _selectedMenuIds.clear();
                         _pendingUpdates.clear();

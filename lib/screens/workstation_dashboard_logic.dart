@@ -9,7 +9,7 @@ import '../services/socket_service.dart';
 import '../services/stockmenu_service.dart';
 import 'workstation_dashboard_state.dart';
 import 'printer_settings_dialog.dart';
-import '../widgets/unified_stock_screen_backup.dart';
+import 'unified_stock_screen.dart';
 import 'batch_cooking_screen.dart';
 import '../widgets/order_card_compact.dart';
 
