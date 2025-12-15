@@ -419,22 +419,26 @@ class ThermalPrintService {
       }
     }
 
-    final List<String> logIds = [];
-    for (final item in itemsToPrint) {
+    // ✅ OPTIMIZED: Process stock checks and logging in PARALLEL
+    // This reduces delay significantly by not waiting for each item sequentially
+    final logIdFutures = itemsToPrint.map((item) async {
       try {
         final stockInfo = await _checkItemStock(item);
-        final logId = await PrintTrackingService().logPrintAttempt(
+        return await PrintTrackingService().logPrintAttempt(
             order.orderId!,
             _convertOrderItemToMap(item),
             workstation,
             printerConfig,
             stockInfo
         );
-        if (logId != null) logIds.add(logId);
       } catch (e) {
         if (kDebugMode) print('⚠️ Failed to log print attempt: $e');
+        return null;
       }
-    }
+    }).toList();
+
+    final results = await Future.wait(logIdFutures);
+    final List<String> logIds = results.whereType<String>().toList();
 
     final startTime = DateTime.now();
     try {
@@ -926,22 +930,25 @@ class ThermalPrintService {
       'info': printerInfo,
     };
 
-    final List<String> logIds = [];
-    for (final item in order.items) {
+    // ✅ OPTIMIZED: Process stock checks and logging in PARALLEL
+    final logIdFutures = order.items.map((item) async {
       try {
         final stockInfo = await _checkItemStock(item);
-        final logId = await PrintTrackingService().logPrintAttempt(
+        return await PrintTrackingService().logPrintAttempt(
             order.orderId!,
             _convertOrderItemToMap(item),
             workstation,
             printerConfig,
             stockInfo
         );
-        if (logId != null) logIds.add(logId);
       } catch (e) {
         if (kDebugMode) print('⚠️ Failed to log print attempt: $e');
+        return null;
       }
-    }
+    }).toList();
+
+    final results = await Future.wait(logIdFutures);
+    final List<String> logIds = results.whereType<String>().toList();
 
     final startTime = DateTime.now();
 

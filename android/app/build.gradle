@@ -128,8 +128,9 @@ android {
                 signingConfig signingConfigs.debug
                 println("⚠️ Menggunakan signing config debug untuk build release")
             }
-            minifyEnabled false
-            shrinkResources false
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             debuggable false
         }
         debug {
