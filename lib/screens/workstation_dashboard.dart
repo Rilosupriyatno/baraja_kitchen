@@ -804,8 +804,9 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
 
     // Sort orders
     int sortOrders(Order a, Order b) => (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0));
+    int sortOrdersDesc(Order a, Order b) => (b.updatedAt ?? DateTime(0)).compareTo(a.updatedAt ?? DateTime(0));
     allPreparing.sort(sortOrders);
-    newDone.sort(sortOrders);
+    newDone.sort(sortOrdersDesc); // Descending: terbaru di atas
     newReservations.sort(sortOrders);
 
     if (mounted) {
@@ -1725,6 +1726,7 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
   List<BluetoothDevice> _bluetoothDevices = [];
   BluetoothDevice? _selectedDevice;
   bool _isScanning = false;
+  bool _isTesting = false; // Add testing state
   String? _errorMessage;
   late bool _autoPrintEnabled;
 
@@ -1828,15 +1830,30 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
       widget.printService.configureBluetoothPrinter(_selectedDevice!);
     }
 
+    // Show loading state
+    setState(() => _isTesting = true);
+
     widget.printService.setAutoPrintEnabled(_autoPrintEnabled);
     final success = await widget.printService.testConnection();
 
+    // Hide loading state
     if (mounted) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(success ? 'Printer berhasil dikonfigurasi dan disimpan!' : 'Gagal terhubung ke printer'),
-        backgroundColor: success ? widget.brandColor : Colors.red,
-      ));
+      setState(() => _isTesting = false);
+    }
+
+    // Close dialog first, then show snackbar
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+      
+      // Show snackbar after dialog is closed
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(success ? 'Printer berhasil dikonfigurasi dan disimpan!' : 'Gagal terhubung ke printer'),
+            backgroundColor: success ? widget.brandColor : Colors.red,
+          ));
+        }
+      });
     }
   }
 
@@ -2039,12 +2056,21 @@ class _PrinterSettingsDialogState extends State<_PrinterSettingsDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: _showClearConfigDialog, child: const Text('Hapus Konfigurasi')),
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+        TextButton(onPressed: _isTesting ? null : _showClearConfigDialog, child: const Text('Hapus Konfigurasi')),
+        TextButton(onPressed: _isTesting ? null : () => Navigator.pop(context), child: const Text('Batal')),
         ElevatedButton(
-          onPressed: _testAndSave,
+          onPressed: _isTesting ? null : _testAndSave,
           style: ElevatedButton.styleFrom(backgroundColor: widget.brandColor, foregroundColor: Colors.white),
-          child: const Text('Test & Simpan'),
+          child: _isTesting
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : const Text('Test & Simpan'),
         ),
       ],
     );

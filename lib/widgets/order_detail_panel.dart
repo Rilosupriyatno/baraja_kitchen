@@ -476,9 +476,9 @@ class _OrderDetailPanelState extends State<OrderDetailPanel> {
         ),
 
         // Action button (only Complete)
-        if (widget.showTimer) ...[
+        if (widget.showTimer) ...[ 
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border(top: BorderSide(color: Colors.grey.shade200)),

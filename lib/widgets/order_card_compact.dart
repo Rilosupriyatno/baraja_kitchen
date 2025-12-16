@@ -687,32 +687,35 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
 
             const SizedBox(height: 16),
 
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: widget.onComplete,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: brandColor,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.check_circle_outline, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      'Tandai Selesai',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              child: SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: widget.onComplete,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: brandColor,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                  ],
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.check_circle_outline, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Tandai Selesai',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

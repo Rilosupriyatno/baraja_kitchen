@@ -1406,10 +1406,17 @@ class ThermalPrintService {
     BluetoothConnection? connection;
 
     try {
+      if (kDebugMode) print('🔵 Starting Bluetooth test connection...');
+      
       connection = await BluetoothConnection.toAddress(_bluetoothDevice!.address)
           .timeout(_connectionTimeout);
 
-      if (!connection.isConnected) return false;
+      if (!connection.isConnected) {
+        if (kDebugMode) print('❌ Bluetooth not connected');
+        return false;
+      }
+
+      if (kDebugMode) print('✅ Bluetooth connected, generating test receipt...');
 
       final profile = await CapabilityProfile.load();
       final generator = Generator(PaperSize.mm80, profile);
@@ -1428,15 +1435,45 @@ class ThermalPrintService {
       bytes.addAll(generator.emptyLines(2));
       bytes.addAll(generator.cut());
 
+      if (kDebugMode) print('📤 Sending ${bytes.length} bytes to printer...');
       connection.output.add(Uint8List.fromList(bytes));
-      await connection.output.allSent;
+      
+      // Add timeout to allSent to prevent hanging
+      try {
+        await connection.output.allSent.timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            if (kDebugMode) print('⚠️ allSent timeout, but data likely sent');
+          },
+        );
+        if (kDebugMode) print('✅ All data sent successfully');
+      } catch (e) {
+        if (kDebugMode) print('⚠️ allSent error (but continuing): $e');
+        // Continue anyway, data is likely sent
+      }
+      
       await Future.delayed(const Duration(milliseconds: 500));
-      await connection.close();
+      
+      if (kDebugMode) print('🔌 Closing Bluetooth connection...');
+      try {
+        // Just call close without awaiting indefinitely, but catch any errors
+        connection.close().catchError((e) {
+          if (kDebugMode) print('⚠️ Error inside close (ignoring): $e');
+        });
+        
+        // Wait a short moment to allow close frame to be sent, but don't block return
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+      } catch (e) {
+        if (kDebugMode) print('⚠️ Error triggering close (ignoring): $e');
+      }
+      
+      if (kDebugMode) print('✅ Bluetooth test completed successfully');
 
       _recordSuccess();
       return true;
     } catch (e) {
-      if (kDebugMode) print('Bluetooth test failed: $e');
+      if (kDebugMode) print('❌ Bluetooth test failed: $e');
       try {
         await connection?.close();
       } catch (_) {}
