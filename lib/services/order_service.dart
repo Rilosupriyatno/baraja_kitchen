@@ -277,6 +277,13 @@ class OrderService {
       List<Order> reservations = [];
 
       for (var order in allOrders) {
+        if (kDebugMode) {
+          print('📦 Order ${order.orderId}:');
+          print('   orderType: ${order.orderType}');
+          print('   service: ${order.service}');
+          print('   status: ${order.status}');
+          print('   isReservation check: ${order.service.toLowerCase().contains('reservation') || order.orderType?.toLowerCase() == 'reservation'}');
+        }
         String status = order.status.toLowerCase();
 
         if (status == 'cancelled' || status == 'paid') {

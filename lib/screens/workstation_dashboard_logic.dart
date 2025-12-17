@@ -260,7 +260,7 @@ mixin WorkstationDashboardLogic<T extends StatefulWidget> on State<T> implements
     }
 
     allPreparing.sort((a, b) => (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)));
-    newDone.sort((a, b) => (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)));
+    newDone.sort((a, b) => (b.updatedAt ?? DateTime(0)).compareTo(a.updatedAt ?? DateTime(0))); // Descending: terbaru di atas
     newReservations.sort((a, b) => (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)));
 
     if (mounted) {

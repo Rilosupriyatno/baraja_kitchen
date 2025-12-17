@@ -195,7 +195,7 @@ class _OrderDetailPanelState extends State<OrderDetailPanel> {
           ),
 
         // Order entry time
-        if (widget.order!.createdAt != null)
+        if (widget.order!.createdAtWIB != null || widget.order!.createdAt != null)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
@@ -207,7 +207,7 @@ class _OrderDetailPanelState extends State<OrderDetailPanel> {
                 Icon(Icons.schedule, size: 16, color: Colors.orange.shade700),
                 const SizedBox(width: 8),
                 Text(
-                  'Order masuk: ${_formatTime(widget.order!.createdAt!)}',
+                  'Order masuk: ${_formatTime(widget.order!.createdAtWIB ?? widget.order!.createdAt!)}',
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.orange.shade900,
