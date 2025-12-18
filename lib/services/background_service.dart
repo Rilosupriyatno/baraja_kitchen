@@ -25,6 +25,13 @@ class BackgroundService {
   factory BackgroundService() => _instance;
   BackgroundService._internal();
 
+  // Stream subscriptions untuk proper cleanup - FIX MEMORY LEAK
+  StreamSubscription<Map<String, dynamic>?>? _newOrderSubscription;
+  StreamSubscription<Map<String, dynamic>?>? _immediatePrintSubscription;
+  StreamSubscription<Map<String, dynamic>?>? _socketStatusSubscription;
+  StreamSubscription<Map<String, dynamic>?>? _pendingOrdersSubscription;
+  bool _isInitialized = false;
+
   static const String notificationChannelId = 'baraja_workstation_channel';
   static const String notificationChannelName = 'Baraja Workstation';
   static const int notificationId = 888;
@@ -480,17 +487,24 @@ class BackgroundService {
   }
 
   /// Get pending orders from background queue
+  /// FIX: Use one-time listener that auto-cancels to prevent memory leak
   Future<Map<String, dynamic>> getPendingOrders() async {
     final completer = Completer<Map<String, dynamic>>();
     final service = FlutterBackgroundService();
+    
+    // Cancel any existing pending orders subscription
+    await _pendingOrdersSubscription?.cancel();
 
-    // Listen for response
-    service.on('pendingOrders').listen((event) {
+    // Create one-time listener
+    _pendingOrdersSubscription = service.on('pendingOrders').listen((event) {
       if (event != null && !completer.isCompleted) {
         completer.complete({
           'orders': json.decode(event['orders'] ?? '[]'),
           'immediatePrint': json.decode(event['immediatePrint'] ?? '[]'),
         });
+        // Cancel subscription after receiving response
+        _pendingOrdersSubscription?.cancel();
+        _pendingOrdersSubscription = null;
       }
     });
 
@@ -500,7 +514,11 @@ class BackgroundService {
     // Timeout after 2 seconds
     return completer.future.timeout(
       const Duration(seconds: 2),
-      onTimeout: () => {'orders': [], 'immediatePrint': []},
+      onTimeout: () {
+        _pendingOrdersSubscription?.cancel();
+        _pendingOrdersSubscription = null;
+        return {'orders': [], 'immediatePrint': []};
+      },
     );
   }
 
@@ -511,32 +529,79 @@ class BackgroundService {
   }
 
   /// Listen for new orders from background service
+  /// FIX: Cancel existing subscription before creating new one
   void onNewOrder(Function(Map<String, dynamic>) callback) {
+    // Cancel any existing subscription first
+    _newOrderSubscription?.cancel();
+    
     final service = FlutterBackgroundService();
-    service.on('newOrder').listen((event) {
+    _newOrderSubscription = service.on('newOrder').listen((event) {
       if (event != null && event['data'] != null) {
-        callback(json.decode(event['data']));
+        try {
+          callback(json.decode(event['data']));
+        } catch (e) {
+          if (kDebugMode) print('❌ Error parsing new order data: $e');
+        }
       }
     });
+    
+    if (kDebugMode) print('📡 New order listener registered');
   }
 
   /// Listen for immediate print events from background service
+  /// FIX: Cancel existing subscription before creating new one
   void onImmediatePrint(Function(Map<String, dynamic>) callback) {
+    // Cancel any existing subscription first
+    _immediatePrintSubscription?.cancel();
+    
     final service = FlutterBackgroundService();
-    service.on('immediatePrint').listen((event) {
+    _immediatePrintSubscription = service.on('immediatePrint').listen((event) {
       if (event != null && event['data'] != null) {
-        callback(json.decode(event['data']));
+        try {
+          callback(json.decode(event['data']));
+        } catch (e) {
+          if (kDebugMode) print('❌ Error parsing immediate print data: $e');
+        }
       }
     });
+    
+    if (kDebugMode) print('📡 Immediate print listener registered');
   }
 
   /// Listen for socket connection status
+  /// FIX: Cancel existing subscription before creating new one
   void onSocketStatus(Function(bool) callback) {
+    // Cancel any existing subscription first
+    _socketStatusSubscription?.cancel();
+    
     final service = FlutterBackgroundService();
-    service.on('socketConnected').listen((event) {
+    _socketStatusSubscription = service.on('socketConnected').listen((event) {
       if (event != null) {
         callback(event['connected'] ?? false);
       }
     });
+    
+    if (kDebugMode) print('📡 Socket status listener registered');
+  }
+
+  /// Dispose all listeners - MUST be called when dashboard is disposed
+  Future<void> dispose() async {
+    if (kDebugMode) print('🧹 Disposing background service listeners...');
+    
+    await _newOrderSubscription?.cancel();
+    _newOrderSubscription = null;
+    
+    await _immediatePrintSubscription?.cancel();
+    _immediatePrintSubscription = null;
+    
+    await _socketStatusSubscription?.cancel();
+    _socketStatusSubscription = null;
+    
+    await _pendingOrdersSubscription?.cancel();
+    _pendingOrdersSubscription = null;
+    
+    _isInitialized = false;
+    
+    if (kDebugMode) print('✅ Background service listeners disposed');
   }
 }

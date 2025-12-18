@@ -36,7 +36,7 @@ class WorkstationDashboard extends StatefulWidget {
   State<WorkstationDashboard> createState() => _WorkstationDashboardState();
 }
 
-class _WorkstationDashboardState extends State<WorkstationDashboard> {
+class _WorkstationDashboardState extends State<WorkstationDashboard> with WidgetsBindingObserver {
   static const Color brandColor = Color(0xFF077A4B);
   List<Order> queue = [];
   List<Order> preparing = [];
@@ -57,11 +57,13 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
   final NotificationService _notificationService = NotificationService();
   final ThermalPrintService _printService = ThermalPrintService();
   final Set<String> _displayedItemIds = <String>{};
+  final Set<String> _reservationOrderIds = <String>{};  // Track order IDs yang masih reservasi
   final Map<String, bool> _expandedOrders = {};
   List<OutOfStockItem> _outOfStockItems = [];
   Timer? _stockCheckTimer;
   bool _autoPrintEnabled = true;
   final BackgroundService _backgroundService = BackgroundService();
+  bool _isProcessingPendingOrders = false; // Guard flag to prevent duplicate processing
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -281,7 +283,38 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
     );
 
     // Start background service for receiving orders when app is in background
-    _initializeBackgroundService(outletId);
+    // FIX: Use addPostFrameCallback to avoid blocking UI during initialization
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeBackgroundService(outletId);
+    });
+
+    // Register lifecycle observer for proper foreground/background handling
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    if (kDebugMode) {
+      print('📱 App lifecycle state changed: $state');
+    }
+    
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // App came back to foreground
+        if (kDebugMode) print('🔄 App resumed - refreshing orders...');
+        _refreshOrders();
+        _processPendingBackgroundOrders();
+        break;
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // App going to background - nothing special needed
+        // Background service will handle socket connection
+        break;
+    }
   }
 
   /// Initialize background service untuk menerima order saat app di background
@@ -320,6 +353,14 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
 
   /// Process orders yang masuk saat app di background
   Future<void> _processPendingBackgroundOrders() async {
+    // Guard to prevent duplicate calls
+    if (_isProcessingPendingOrders) {
+      if (kDebugMode) print('⏭️ Already processing pending orders, skipping...');
+      return;
+    }
+    
+    _isProcessingPendingOrders = true;
+    
     try {
       final pending = await _backgroundService.getPendingOrders();
       final immediatePrintQueue = pending['immediatePrint'] as List? ?? [];
@@ -345,6 +386,8 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
       if (kDebugMode) {
         print('❌ Error processing pending background orders: $e');
       }
+    } finally {
+      _isProcessingPendingOrders = false;
     }
   }
 
@@ -540,10 +583,54 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
         _displayedItemIds.add(item.itemId);
       }
 
+      // ✅ FIX: For open bill, get customer name from existing order if not provided
+      String customerName = printData['name'] ?? '';
+      String customerTable = printData['tableNumber'] ?? '';
+      String cashierName = printData['cashierName'] ?? '';
+      
+      // Try to get info from existing order (for open bill scenario)
+      if (customerName.isEmpty || customerName == 'Guest') {
+        final existingOrder = preparing.firstWhere(
+          (o) => o.orderId == orderId,
+          orElse: () => Order(
+            orderId: orderId,
+            name: 'Guest',
+            table: '',
+            status: '',
+            items: [],
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+            createdAtWIB: DateTime.now(),
+            updatedAtWIB: DateTime.now(),
+            service: '',
+            orderType: '',
+            source: '',
+            paymentMethod: '',
+          ),
+        );
+        
+        if (existingOrder.name.isNotEmpty && existingOrder.name != 'Guest') {
+          customerName = existingOrder.name;
+          if (kDebugMode) {
+            print('📝 [OPEN BILL] Using existing customer name: $customerName');
+          }
+        }
+        
+        // Also get table and cashier if missing
+        if (customerTable.isEmpty && existingOrder.table.isNotEmpty) {
+          customerTable = existingOrder.table;
+        }
+        if (cashierName.isEmpty && existingOrder.cashierName != null) {
+          cashierName = existingOrder.cashierName!;
+        }
+      }
+      
+      if (customerName.isEmpty) customerName = 'Guest';
+
       final tempOrder = Order(
         orderId: orderId,
-        name: printData['name'] ?? 'Guest',
-        table: printData['tableNumber'] ?? '',
+        name: customerName,
+        table: customerTable,
         status: 'OnProcess',
         items: workstationItems,
         createdAt: DateTime.now(),
@@ -554,7 +641,7 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
         orderType: printData['orderType'] ?? 'dine-in',
         source: printData['source'] ?? 'Cashier',
         paymentMethod: printData['paymentMethod'] ?? 'Cash',
-        cashierName: printData['cashierName'],  // ✅ FIX: Pass cashierName from socket data
+        cashierName: cashierName.isNotEmpty ? cashierName : null,
       );
 
       _printService.autoPrintOrder(tempOrder, isOpenBill: false).then((printed) {
@@ -746,11 +833,18 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
 
   @override
   void dispose() {
+    // Remove lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
+    
     _mainTimer.cancel();
     _refreshTimer.cancel();
     SocketService.disconnect();
     _notificationService.dispose();
     _stockCheckTimer?.cancel();
+    
+    // FIX: Dispose background service listeners to prevent memory leak
+    _backgroundService.dispose();
+    
     super.dispose();
   }
 
@@ -838,6 +932,26 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
 
     final allPreparing = [...newPreparing, ...confirmedOrders];
 
+    // ✅ FIX: Detect reservations that transitioned to preparing (by backend)
+    // These need to be printed even though their items were already "displayed"
+    final reservationsNowPreparing = <Order>[];
+    for (var order in newPreparing) {
+      if (order.orderId != null && _reservationOrderIds.contains(order.orderId)) {
+        // This order was previously a reservation, now it's preparing
+        reservationsNowPreparing.add(order);
+        _reservationOrderIds.remove(order.orderId);
+        
+        // Remove items from displayedIds so they get printed
+        for (final item in order.items) {
+          _displayedItemIds.remove(item.itemId);
+        }
+        
+        if (kDebugMode) {
+          print('🔄 Reservation ${order.orderId} transitioned to preparing - will print');
+        }
+      }
+    }
+
     // Process Print (Non-blocking)
     if (!isInitialLoad) {
       _processPrintQueue(allPreparing);
@@ -849,9 +963,12 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
       }
     }
 
-    // Process reservations notifications
+    // Process reservations notifications and track reservation order IDs
     for (var order in newReservations) {
       if (order.orderId != null && !OrderService.shouldMoveReservationToPreparation(order)) {
+        // Track this as a reservation for later detection
+        _reservationOrderIds.add(order.orderId!);
+        
         bool hasNewItems = false;
         for (final item in order.items) {
           if (!_displayedItemIds.contains(item.itemId)) {
