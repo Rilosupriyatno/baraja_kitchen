@@ -1087,81 +1087,80 @@ class ThermalPrintService {
   Future<void> _generateReceipt(NetworkPrinter printer, Order order) async {
     if (kDebugMode) print('🖨️ Generating full receipt');
 
-    printer.text('BARAJA AMPHI',
+    // Header - Workstation Name
+    printer.text(_workstationName.toUpperCase(),
         styles: const PosStyles(
           align: PosAlign.center,
           height: PosTextSize.size2,
           width: PosTextSize.size2,
           bold: true,
         ));
-    printer.text(' ');
+    printer.feed(1);
 
-    printer.text('ORDER $_workstationName',
-        styles: const PosStyles(
-          align: PosAlign.center,
-          bold: true,
-          height: PosTextSize.size1,
-          width: PosTextSize.size1,
-        ));
-
-    printer.hr(ch: '-');
-    printer.text(' ');
-
+    // Order ID (kode struk)
     printer.row([
-      PosColumn(text: 'Order ID:', width: 4, styles: const PosStyles(bold: true)),
-      PosColumn(text: order.orderId ?? 'N/A', width: 8),
+      PosColumn(text: 'Kode Struk', width: 4, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.orderId ?? 'XXX-XXX-XXXX', width: 8, styles: const PosStyles(align: PosAlign.right)),
     ]);
-    printer.text(' ');
 
+    // Tanggal
     printer.row([
-      PosColumn(text: 'Nama:', width: 4, styles: const PosStyles(bold: true)),
-      PosColumn(text: order.name, width: 8),
+      PosColumn(text: 'Tanggal', width: 4, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: DateFormat('yyyy/MM/dd HH:mm:ss').format(DateTime.now()), width: 8, styles: const PosStyles(align: PosAlign.right)),
     ]);
-    printer.text(' ');
 
+    // Kasir
     printer.row([
-      PosColumn(text: 'Meja:', width: 4, styles: const PosStyles(bold: true)),
-      PosColumn(text: order.table, width: 8),
+      PosColumn(text: 'Kasir', width: 4, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.cashierName ?? '-', width: 8, styles: const PosStyles(align: PosAlign.right)),
     ]);
-    printer.text(' ');
 
+    // Pelanggan
     printer.row([
-      PosColumn(text: 'Tipe:', width: 4, styles: const PosStyles(bold: true)),
-      PosColumn(text: order.service, width: 8),
+      PosColumn(text: 'Pelanggan', width: 4, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.name, width: 8, styles: const PosStyles(align: PosAlign.right)),
     ]);
-    printer.text(' ');
 
-    if (order.service.contains('Reservation') && order.reservationDate != null) {
+    // No Meja (jika Dine In)
+    if (order.service.toLowerCase() == 'dine-in' || order.service.toLowerCase() == 'dine in') {
       printer.row([
-        PosColumn(text: 'Tanggal:', width: 4, styles: const PosStyles(bold: true)),
-        PosColumn(text: order.reservationDate!, width: 8),
+        PosColumn(text: 'No Meja', width: 4, styles: const PosStyles(align: PosAlign.left)),
+        PosColumn(text: order.table, width: 8, styles: const PosStyles(align: PosAlign.right)),
       ]);
-      printer.text(' ');
-
-      printer.row([
-        PosColumn(text: 'Jam:', width: 4, styles: const PosStyles(bold: true)),
-        PosColumn(text: order.reservationTime ?? '-', width: 8),
-      ]);
-      printer.text(' ');
     }
 
-    printer.row([
-      PosColumn(text: 'Waktu:', width: 4, styles: const PosStyles(bold: true)),
-      PosColumn(text: DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now()), width: 8),
-    ]);
-    printer.text(' ');
+    // Info reservasi jika ada
+    if (order.service.contains('Reservation') && order.reservationDate != null) {
+      printer.row([
+        PosColumn(text: 'Tgl Reservasi', width: 4, styles: const PosStyles(align: PosAlign.left)),
+        PosColumn(text: order.reservationDate!, width: 8, styles: const PosStyles(align: PosAlign.right)),
+      ]);
 
-    printer.hr(ch: '-');
-    printer.text(' ');
+      printer.row([
+        PosColumn(text: 'Jam', width: 4, styles: const PosStyles(align: PosAlign.left)),
+        PosColumn(text: order.reservationTime ?? '-', width: 8, styles: const PosStyles(align: PosAlign.right)),
+      ]);
+    }
 
-    printer.text('PESANAN:', styles: const PosStyles(bold: true, underline: true));
-    printer.text(' ');
+    printer.feed(1);
 
+    // Tipe Order
+    printer.text(order.service,
+        styles: const PosStyles(align: PosAlign.center, bold: true));
+
+    printer.hr();
+
+    // List Items
     for (var item in order.items) {
-      final itemNameWithService = '${item.name} (${order.service}) x${item.qty}';
-      printer.text(itemNameWithService, styles: const PosStyles(bold: true));
+      // Nama item dengan penanda tipe order dan qty
+      final orderTypeShort = _getOrderTypeShort(order.service);
+      printer.row([
+        PosColumn(text: orderTypeShort, width: 1, styles: const PosStyles(align: PosAlign.left, bold: true, underline: true)),
+        PosColumn(text: item.name, width: 8, styles: const PosStyles(align: PosAlign.left, bold: true)),
+        PosColumn(text: 'x${item.qty}', width: 3, styles: const PosStyles(align: PosAlign.right)),
+      ]);
 
-      // ✅ FIXED: Safe addon parsing
+      // Addons
       if (item.addons != null && item.addons!.isNotEmpty) {
         for (var addon in item.addons!) {
           try {
@@ -1176,68 +1175,49 @@ class ThermalPrintService {
               }
             }
 
-            final text = label.isNotEmpty ? '  + $name - $label' : '  + $name';
-            printer.text(text, styles: const PosStyles(fontType: PosFontType.fontB));
+            final addonText = label.isNotEmpty ? '$name: $label' : name;
+            printer.row([
+              PosColumn(text: ' ', width: 2, styles: const PosStyles(align: PosAlign.left)),
+              PosColumn(text: addonText, width: 10, styles: const PosStyles(align: PosAlign.left)),
+            ]);
           } catch (e) {
             if (kDebugMode) print('⚠️ Error printing addon: $e');
-            printer.text('  + ${addon['name'] ?? 'Unknown'}',
-                styles: const PosStyles(fontType: PosFontType.fontB));
           }
         }
       }
 
-      // ✅ FIXED: Safe topping parsing
+      // Toppings
       if (item.toppings != null && item.toppings!.isNotEmpty) {
-        for (var topping in item.toppings!) {
-          try {
-            final name = topping['name'] ?? 'Unknown';
-            String label = '';
+        final toppingsList = item.toppings!.map((t) {
+          final name = t['name'] ?? 'Unknown';
+          final price = t['price'] ?? 0;
+          return price != 0 ? '$name(+$price)' : name;
+        }).join(', ');
 
-            if (topping['options'] != null) {
-              if (topping['options'] is Map) {
-                label = topping['options']['label'] ?? topping['options']['name'] ?? '';
-              } else if (topping['options'] is String) {
-                label = topping['options'];
-              }
-            }
-
-            final text = label.isNotEmpty ? '  + $name - $label' : '  + $name';
-            printer.text(text, styles: const PosStyles(fontType: PosFontType.fontB));
-          } catch (e) {
-            if (kDebugMode) print('⚠️ Error printing topping: $e');
-            printer.text('  + ${topping['name'] ?? 'Unknown'}',
-                styles: const PosStyles(fontType: PosFontType.fontB));
-          }
-        }
+        printer.row([
+          PosColumn(text: ' ', width: 2, styles: const PosStyles(align: PosAlign.left)),
+          PosColumn(text: '+$toppingsList', width: 10, styles: const PosStyles(align: PosAlign.left)),
+        ]);
       }
 
-      if (item.notes != null && item.notes!.isNotEmpty) {
-        printer.text('  Catatan: ${item.notes}',
-            styles: const PosStyles(fontType: PosFontType.fontB, bold: true));
+      // Notes
+      if (item.notes != null && item.notes!.isNotEmpty && item.notes!.trim().isNotEmpty) {
+        printer.row([
+          PosColumn(text: ' ', width: 2, styles: const PosStyles(align: PosAlign.left)),
+          PosColumn(text: 'Catatan: ${item.notes}', width: 10, styles: const PosStyles(align: PosAlign.left)),
+        ]);
       }
 
-      printer.text(' ');
+      printer.feed(1);
     }
 
-    printer.hr(ch: '-');
-    printer.text(' ');
+    printer.hr();
 
-    final totalItems = order.items.fold(0, (sum, item) => sum + item.qty);
-    printer.row([
-      PosColumn(text: 'TOTAL ITEM:', width: 6, styles: const PosStyles(bold: true)),
-      PosColumn(text: '$totalItems', width: 6,
-          styles: const PosStyles(
-            bold: true,
-            align: PosAlign.right,
-            height: PosTextSize.size2,
-            width: PosTextSize.size2,
-          )),
-    ]);
+    // Footer - Selesai
+    printer.text('Selesai',
+        styles: const PosStyles(align: PosAlign.center));
 
-    printer.text(' ');
-    printer.hr(ch: '-');
-    printer.text(' ');
-    printer.text(' ');
+    printer.feed(2);
     printer.cut();
   }
 
@@ -1247,101 +1227,133 @@ class ThermalPrintService {
   Future<List<int>> _generateReceiptBytes(Generator generator, Order order) async {
     final List<int> bytes = [];
 
-    bytes.addAll(generator.text('BARAJA AMPHI',
+    // Header - Workstation Name
+    bytes.addAll(generator.text(_workstationName.toUpperCase(),
         styles: const PosStyles(
           align: PosAlign.center,
           height: PosTextSize.size2,
           width: PosTextSize.size2,
           bold: true,
         )));
+    bytes.addAll(generator.feed(1));
 
-    bytes.addAll(generator.text('ORDER $_workstationName',
-        styles: const PosStyles(
-          align: PosAlign.center,
-          bold: true,
-          height: PosTextSize.size1,
-          width: PosTextSize.size1,
-        )));
+    // Order ID (kode struk)
+    bytes.addAll(generator.row([
+      PosColumn(text: 'Kode Struk', width: 4, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.orderId ?? 'XXX-XXX-XXXX', width: 8, styles: const PosStyles(align: PosAlign.right)),
+    ]));
+
+    // Tanggal
+    bytes.addAll(generator.row([
+      PosColumn(text: 'Tanggal', width: 4, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: DateFormat('yyyy/MM/dd HH:mm:ss').format(DateTime.now()), width: 8, styles: const PosStyles(align: PosAlign.right)),
+    ]));
+
+    // Kasir
+    bytes.addAll(generator.row([
+      PosColumn(text: 'Kasir', width: 4, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.cashierName ?? '-', width: 8, styles: const PosStyles(align: PosAlign.right)),
+    ]));
+
+    // Pelanggan
+    bytes.addAll(generator.row([
+      PosColumn(text: 'Pelanggan', width: 4, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.name, width: 8, styles: const PosStyles(align: PosAlign.right)),
+    ]));
+
+    // No Meja (jika Dine In)
+    if (order.service.toLowerCase() == 'dine-in' || order.service.toLowerCase() == 'dine in') {
+      bytes.addAll(generator.row([
+        PosColumn(text: 'No Meja', width: 4, styles: const PosStyles(align: PosAlign.left)),
+        PosColumn(text: order.table, width: 8, styles: const PosStyles(align: PosAlign.right)),
+      ]));
+    }
+
+    // Info reservasi jika ada
+    if (order.service.contains('Reservation') && order.reservationDate != null) {
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Tgl Reservasi', width: 4, styles: const PosStyles(align: PosAlign.left)),
+        PosColumn(text: order.reservationDate!, width: 8, styles: const PosStyles(align: PosAlign.right)),
+      ]));
+
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Jam', width: 4, styles: const PosStyles(align: PosAlign.left)),
+        PosColumn(text: order.reservationTime ?? '-', width: 8, styles: const PosStyles(align: PosAlign.right)),
+      ]));
+    }
+
+    bytes.addAll(generator.feed(1));
+
+    // Tipe Order
+    bytes.addAll(generator.text(order.service,
+        styles: const PosStyles(align: PosAlign.center, bold: true)));
 
     bytes.addAll(generator.hr());
-    bytes.addAll(generator.emptyLines(1));
 
-    bytes.addAll(generator.row([
-      PosColumn(text: 'Order ID:', width: 4, styles: const PosStyles(bold: true)),
-      PosColumn(text: order.orderId ?? 'N/A', width: 8),
-    ]));
-
-    bytes.addAll(generator.row([
-      PosColumn(text: 'Nama:', width: 4, styles: const PosStyles(bold: true)),
-      PosColumn(text: order.name, width: 8),
-    ]));
-
-    bytes.addAll(generator.row([
-      PosColumn(text: 'Meja:', width: 4, styles: const PosStyles(bold: true)),
-      PosColumn(text: order.table, width: 8),
-    ]));
-
-    bytes.addAll(generator.row([
-      PosColumn(text: 'Tipe:', width: 4, styles: const PosStyles(bold: true)),
-      PosColumn(text: order.service, width: 8),
-    ]));
-
-    bytes.addAll(generator.row([
-      PosColumn(text: 'Waktu:', width: 4, styles: const PosStyles(bold: true)),
-      PosColumn(text: DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now()), width: 8),
-    ]));
-
-    bytes.addAll(generator.hr());
-    bytes.addAll(generator.emptyLines(1));
-
-    bytes.addAll(generator.text('PESANAN:',
-        styles: const PosStyles(bold: true, underline: true)));
-    bytes.addAll(generator.emptyLines(1));
-
+    // List Items
     for (var item in order.items) {
-      final itemNameWithService = '${item.name} (${order.service}) x${item.qty}';
-      bytes.addAll(generator.text(itemNameWithService, styles: const PosStyles(bold: true)));
+      // Nama item dengan penanda tipe order dan qty
+      final orderTypeShort = _getOrderTypeShort(order.service);
+      bytes.addAll(generator.row([
+        PosColumn(text: orderTypeShort, width: 1, styles: const PosStyles(align: PosAlign.left, bold: true, underline: true)),
+        PosColumn(text: item.name, width: 8, styles: const PosStyles(align: PosAlign.left, bold: true)),
+        PosColumn(text: 'x${item.qty}', width: 3, styles: const PosStyles(align: PosAlign.right)),
+      ]));
 
-      // ✅ FIXED: Safe addon parsing
+      // Addons
       if (item.addons != null && item.addons!.isNotEmpty) {
         for (var addon in item.addons!) {
-          final addonText = _getSafeAddonText(addon);
-          bytes.addAll(generator.text(addonText));
+          final name = addon['name'] ?? 'Unknown';
+          String label = '';
+
+          if (addon['options'] != null) {
+            if (addon['options'] is Map) {
+              label = addon['options']['label'] ?? addon['options']['name'] ?? '';
+            } else if (addon['options'] is String) {
+              label = addon['options'];
+            }
+          }
+
+          final addonText = label.isNotEmpty ? '$name: $label' : name;
+          bytes.addAll(generator.row([
+            PosColumn(text: ' ', width: 2, styles: const PosStyles(align: PosAlign.left)),
+            PosColumn(text: addonText, width: 10, styles: const PosStyles(align: PosAlign.left)),
+          ]));
         }
       }
 
-      // ✅ FIXED: Safe topping parsing
+      // Toppings
       if (item.toppings != null && item.toppings!.isNotEmpty) {
-        for (var topping in item.toppings!) {
-          final toppingText = _getSafeAddonText(topping);
-          bytes.addAll(generator.text(toppingText));
-        }
+        final toppingsList = item.toppings!.map((t) {
+          final name = t['name'] ?? 'Unknown';
+          final price = t['price'] ?? 0;
+          return price != 0 ? '$name(+$price)' : name;
+        }).join(', ');
+
+        bytes.addAll(generator.row([
+          PosColumn(text: ' ', width: 2, styles: const PosStyles(align: PosAlign.left)),
+          PosColumn(text: '+$toppingsList', width: 10, styles: const PosStyles(align: PosAlign.left)),
+        ]));
       }
 
-      if (item.notes != null && item.notes!.isNotEmpty) {
-        bytes.addAll(generator.text('  Catatan: ${item.notes}',
-            styles: const PosStyles(bold: true)));
+      // Notes
+      if (item.notes != null && item.notes!.isNotEmpty && item.notes!.trim().isNotEmpty) {
+        bytes.addAll(generator.row([
+          PosColumn(text: ' ', width: 2, styles: const PosStyles(align: PosAlign.left)),
+          PosColumn(text: 'Catatan: ${item.notes}', width: 10, styles: const PosStyles(align: PosAlign.left)),
+        ]));
       }
 
-      bytes.addAll(generator.emptyLines(1));
+      bytes.addAll(generator.feed(1));
     }
 
     bytes.addAll(generator.hr());
-    bytes.addAll(generator.emptyLines(1));
 
-    final totalItems = order.items.fold(0, (sum, item) => sum + item.qty);
-    bytes.addAll(generator.row([
-      PosColumn(text: 'TOTAL ITEM:', width: 6, styles: const PosStyles(bold: true)),
-      PosColumn(text: '$totalItems', width: 6,
-          styles: const PosStyles(
-            bold: true,
-            align: PosAlign.right,
-            height: PosTextSize.size2,
-            width: PosTextSize.size2,
-          )),
-    ]));
+    // Footer - Selesai
+    bytes.addAll(generator.text('Selesai',
+        styles: const PosStyles(align: PosAlign.center)));
 
-    bytes.addAll(generator.emptyLines(2));
+    bytes.addAll(generator.feed(2));
     bytes.addAll(generator.cut());
 
     return bytes;
