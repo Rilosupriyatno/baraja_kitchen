@@ -4,6 +4,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/order.dart';
 import '../models/device.dart';
 import 'order_service.dart';
+import 'background_service.dart';
 import 'package:flutter/foundation.dart';
 
 class SocketService {
@@ -49,6 +50,9 @@ class SocketService {
       if (kDebugMode) {
         print('✅ Socket connected: ${_socket!.id}');
       }
+
+      // Notify background service about connection status
+      BackgroundService().updateSocketStatus(true);
 
       // Join kitchen room (all devices)
       _socket!.emit('join_kitchen_room', outletId);
@@ -247,12 +251,15 @@ class SocketService {
       if (kDebugMode) {
         print('❌ Socket disconnected');
       }
+      // Notify background service about disconnection
+      BackgroundService().updateSocketStatus(false);
     });
 
     _socket!.onError((error) {
       if (kDebugMode) {
         print('❌ Socket error: $error');
       }
+      BackgroundService().updateSocketStatus(false);
     });
 
     _socket!.onReconnect((_) {

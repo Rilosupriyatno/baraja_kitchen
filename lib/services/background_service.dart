@@ -1,5 +1,6 @@
 // services/background_service.dart
-// Background service untuk menjaga koneksi socket dan menerima order saat app di background
+// Background service untuk menjaga notifikasi foreground dan menerima data saat app di background
+// NOTE: Socket connection ditangani oleh SocketService, bukan di sini untuk menghindari duplikasi
 
 import 'dart:async';
 import 'dart:convert';
@@ -11,21 +12,19 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 /// Background Service untuk Baraja Workstation
 /// 
 /// Service ini akan:
-/// 1. Menjaga koneksi Socket.IO saat app di background
-/// 2. Menerima order baru dan immediate print events
-/// 3. Menyimpan queue order untuk di-print saat app kembali ke foreground
-/// 4. Memainkan notification sound saat ada order baru
+/// 1. Menampilkan foreground notification agar app tetap hidup di background
+/// 2. Menyimpan queue order yang diterima untuk di-print saat app kembali ke foreground
+/// 3. NOTE: Socket connection TIDAK dibuat di sini - ditangani oleh SocketService
 class BackgroundService {
   static final BackgroundService _instance = BackgroundService._internal();
   factory BackgroundService() => _instance;
   BackgroundService._internal();
 
-  // Stream subscriptions untuk proper cleanup - FIX MEMORY LEAK
+  // Stream subscriptions untuk proper cleanup
   StreamSubscription<Map<String, dynamic>?>? _newOrderSubscription;
   StreamSubscription<Map<String, dynamic>?>? _immediatePrintSubscription;
   StreamSubscription<Map<String, dynamic>?>? _socketStatusSubscription;
@@ -72,7 +71,7 @@ class BackgroundService {
         isForegroundMode: true,
         notificationChannelId: notificationChannelId,
         initialNotificationTitle: 'Baraja Workstation',
-        initialNotificationContent: 'Initializing...',
+        initialNotificationContent: 'Menunggu konfigurasi...',
         foregroundServiceNotificationId: notificationId,
         foregroundServiceTypes: [AndroidForegroundType.dataSync],
       ),
@@ -110,9 +109,6 @@ class BackgroundService {
 
     final prefs = await SharedPreferences.getInstance();
 
-    // Socket connection
-    IO.Socket? socket;
-
     // Notification plugin for sounds
     final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
         FlutterLocalNotificationsPlugin();
@@ -131,8 +127,6 @@ class BackgroundService {
     // Listen for stop command
     service.on('stopService').listen((event) {
       if (kDebugMode) print('🛑 Stopping background service...');
-      socket?.disconnect();
-      socket?.dispose();
       service.stopSelf();
     });
 
@@ -159,22 +153,80 @@ class BackgroundService {
         // Update notification
         if (service is AndroidServiceInstance) {
           service.setForegroundNotificationInfo(
-            title: 'Baraja Workstation',
-            content: 'Online: $deviceName ${location.isNotEmpty ? "- $location" : ""}',
+            title: 'Baraja Workstation - Online',
+            content: '$deviceName ${location.isNotEmpty ? "- $location" : ""}',
           );
         }
-
-        // Connect socket
-        socket?.disconnect();
-        socket?.dispose();
-        socket = _connectSocket(
-          outletId: outletId,
-          device: device,
-          service: service,
-          prefs: prefs,
-          notificationsPlugin: flutterLocalNotificationsPlugin,
-        );
       }
+    });
+
+    // Listen for socket status updates from foreground
+    service.on('updateSocketStatus').listen((event) async {
+      if (event == null) return;
+      
+      final connected = event['connected'] as bool? ?? false;
+      final deviceName = prefs.getString(_deviceDataKey);
+      String name = 'Unknown';
+      String location = '';
+      
+      if (deviceName != null) {
+        try {
+          final device = json.decode(deviceName);
+          name = device['deviceName'] ?? 'Unknown';
+          location = device['location'] ?? '';
+        } catch (_) {}
+      }
+
+      if (service is AndroidServiceInstance) {
+        if (connected) {
+          service.setForegroundNotificationInfo(
+            title: 'Baraja Workstation - Online',
+            content: '$name ${location.isNotEmpty ? "- $location" : ""}',
+          );
+        } else {
+          service.setForegroundNotificationInfo(
+            title: 'Baraja Workstation - Offline',
+            content: 'Mencoba reconnect...',
+          );
+        }
+      }
+    });
+
+    // Listen for new order notification from foreground socket
+    service.on('notifyNewOrder').listen((event) async {
+      if (event == null) return;
+      
+      if (kDebugMode) {
+        print('🔔 [BG] New order notification received from foreground');
+      }
+
+      // Show notification
+      await _showOrderNotification(
+        flutterLocalNotificationsPlugin,
+        title: 'Order Baru!',
+        body: event['message'] as String? ?? 'Ada order baru yang perlu diproses',
+      );
+    });
+
+    // Listen for immediate print notification from foreground socket
+    service.on('notifyImmediatePrint').listen((event) async {
+      if (event == null) return;
+      
+      final orderId = event['orderId'] as String? ?? '';
+      
+      if (kDebugMode) {
+        print('🔥 [BG] Immediate print notification received: $orderId');
+      }
+
+      // Queue for print if app is in background
+      await _addToImmediatePrintQueue(prefs, event);
+
+      // Show notification
+      await _showOrderNotification(
+        flutterLocalNotificationsPlugin,
+        title: 'Print Order!',
+        body: 'Order $orderId perlu dicetak',
+      );
     });
 
     // Listen for get pending orders request
@@ -199,11 +251,9 @@ class BackgroundService {
       if (kDebugMode) print('🗑️ Queues cleared');
     });
 
-    // Try to restore previous configuration
+    // Restore previous configuration for notification display
     final savedDeviceData = prefs.getString(_deviceDataKey);
-    final savedOutletId = prefs.getString(_outletIdKey);
-
-    if (savedDeviceData != null && savedOutletId != null) {
+    if (savedDeviceData != null) {
       final device = json.decode(savedDeviceData);
       final deviceName = device['deviceName'] ?? 'Unknown';
       final location = device['location'] ?? '';
@@ -215,180 +265,18 @@ class BackgroundService {
       if (service is AndroidServiceInstance) {
         service.setForegroundNotificationInfo(
           title: 'Baraja Workstation',
-          content: 'Online: $deviceName ${location.isNotEmpty ? "- $location" : ""}',
+          content: '$deviceName ${location.isNotEmpty ? "- $location" : ""} - Menunggu koneksi...',
         );
       }
-
-      socket = _connectSocket(
-        outletId: savedOutletId,
-        device: device,
-        service: service,
-        prefs: prefs,
-        notificationsPlugin: flutterLocalNotificationsPlugin,
-      );
+    } else {
+      // No saved config - show waiting status
+      if (service is AndroidServiceInstance) {
+        service.setForegroundNotificationInfo(
+          title: 'Baraja Workstation',
+          content: 'Menunggu pilihan device...',
+        );
+      }
     }
-  }
-
-  /// Connect to Socket.IO server
-  static IO.Socket _connectSocket({
-    required String outletId,
-    required Map<String, dynamic> device,
-    required ServiceInstance service,
-    required SharedPreferences prefs,
-    required FlutterLocalNotificationsPlugin notificationsPlugin,
-  }) {
-    final baseUrl = dotenv.env['BASE_URL'] ?? 'http://localhost:3000';
-    final deviceId = device['deviceId'] ?? '';
-    final deviceName = device['deviceName'] ?? 'Unknown';
-    final location = device['location'] ?? '';
-    final shouldHandleBeverages = device['shouldHandleBeverages'] ?? false;
-
-    if (kDebugMode) {
-      print('📡 [BG] Connecting to socket: $baseUrl');
-      print('   Device: $deviceName');
-      print('   Outlet: $outletId');
-    }
-
-    final socket = IO.io(
-      baseUrl,
-      IO.OptionBuilder()
-          .setTransports(['websocket'])
-          .enableForceNew()
-          .enableAutoConnect()
-          .setReconnectionDelay(1000)
-          .setReconnectionAttempts(10)
-          .build(),
-    );
-
-    socket.onConnect((_) {
-      if (kDebugMode) print('✅ [BG] Socket connected');
-
-      // Join rooms
-      socket.emit('join_kitchen_room', outletId);
-      if (shouldHandleBeverages && location.isNotEmpty) {
-        socket.emit('join_bar_room', location);
-      }
-      socket.emit('join_cashier_room', {'outletId': outletId});
-
-      // Update notification
-      if (service is AndroidServiceInstance) {
-        service.setForegroundNotificationInfo(
-          title: 'Baraja Workstation - Connected',
-          content: 'Online: $deviceName ${location.isNotEmpty ? "- $location" : ""}',
-        );
-      }
-
-      // Notify main app
-      service.invoke('socketConnected', {'connected': true});
-    });
-
-    socket.onDisconnect((_) {
-      if (kDebugMode) print('❌ [BG] Socket disconnected');
-
-      if (service is AndroidServiceInstance) {
-        service.setForegroundNotificationInfo(
-          title: 'Baraja Workstation - Disconnected',
-          content: 'Mencoba reconnect...',
-        );
-      }
-
-      service.invoke('socketConnected', {'connected': false});
-    });
-
-    socket.onReconnect((_) {
-      if (kDebugMode) print('🔄 [BG] Socket reconnected');
-      
-      // Rejoin rooms
-      socket.emit('join_kitchen_room', outletId);
-      if (shouldHandleBeverages && location.isNotEmpty) {
-        socket.emit('join_bar_room', location);
-      }
-      socket.emit('join_cashier_room', {'outletId': outletId});
-
-      if (service is AndroidServiceInstance) {
-        service.setForegroundNotificationInfo(
-          title: 'Baraja Workstation - Connected',
-          content: 'Online: $deviceName ${location.isNotEmpty ? "- $location" : ""}',
-        );
-      }
-    });
-
-    // Handle new order event
-    socket.on('new_order', (data) async {
-      if (kDebugMode) {
-        print('🔔 [BG] New order received');
-      }
-
-      // Show notification
-      await _showOrderNotification(
-        notificationsPlugin,
-        title: 'Order Baru!',
-        body: 'Ada order baru yang perlu diproses',
-      );
-
-      // Notify main app (if running in foreground)
-      service.invoke('newOrder', {'data': json.encode(data)});
-    });
-
-    // Handle kitchen immediate print
-    socket.on('kitchen_immediate_print', (data) async {
-      if (kDebugMode) {
-        print('🔥 [BG] Kitchen immediate print received');
-        print('   Order ID: ${data['orderId']}');
-        print('   Target Device: ${data['deviceId']}');
-      }
-
-      // Check if this is for our device
-      final targetDeviceId = data['deviceId'] as String?;
-      if (targetDeviceId != null && targetDeviceId != deviceId) {
-        if (kDebugMode) print('⏭️ [BG] Skipping - not our device');
-        return;
-      }
-
-      // Queue for print
-      await _addToImmediatePrintQueue(prefs, data);
-
-      // Show notification
-      await _showOrderNotification(
-        notificationsPlugin,
-        title: 'Print Order!',
-        body: 'Order ${data['orderId']} perlu dicetak',
-      );
-
-      // Notify main app
-      service.invoke('immediatePrint', {'data': json.encode(data)});
-    });
-
-    // Handle beverage immediate print
-    socket.on('beverage_immediate_print', (data) async {
-      if (kDebugMode) {
-        print('🔥 [BG] Beverage immediate print received');
-        print('   Order ID: ${data['orderId']}');
-        print('   Target Device: ${data['deviceId']}');
-      }
-
-      // Check if this is for our device
-      final targetDeviceId = data['deviceId'] as String?;
-      if (targetDeviceId != null && targetDeviceId != deviceId) {
-        if (kDebugMode) print('⏭️ [BG] Skipping - not our device');
-        return;
-      }
-
-      // Queue for print
-      await _addToImmediatePrintQueue(prefs, data);
-
-      // Show notification
-      await _showOrderNotification(
-        notificationsPlugin,
-        title: 'Print Beverage!',
-        body: 'Beverage order ${data['orderId']} perlu dicetak',
-      );
-
-      // Notify main app
-      service.invoke('immediatePrint', {'data': json.encode(data)});
-    });
-
-    return socket;
   }
 
   /// Show notification for new order
@@ -473,6 +361,24 @@ class BackgroundService {
     }
   }
 
+  /// Update socket status in background service notification
+  void updateSocketStatus(bool connected) {
+    final service = FlutterBackgroundService();
+    service.invoke('updateSocketStatus', {'connected': connected});
+  }
+
+  /// Notify background service of new order (from foreground socket)
+  void notifyNewOrder(String message) {
+    final service = FlutterBackgroundService();
+    service.invoke('notifyNewOrder', {'message': message});
+  }
+
+  /// Notify background service of immediate print (from foreground socket)
+  void notifyImmediatePrint(Map<String, dynamic> data) {
+    final service = FlutterBackgroundService();
+    service.invoke('notifyImmediatePrint', data);
+  }
+
   /// Stop the background service
   Future<void> stopService() async {
     final service = FlutterBackgroundService();
@@ -487,7 +393,6 @@ class BackgroundService {
   }
 
   /// Get pending orders from background queue
-  /// FIX: Use one-time listener that auto-cancels to prevent memory leak
   Future<Map<String, dynamic>> getPendingOrders() async {
     final completer = Completer<Map<String, dynamic>>();
     final service = FlutterBackgroundService();
@@ -529,7 +434,6 @@ class BackgroundService {
   }
 
   /// Listen for new orders from background service
-  /// FIX: Cancel existing subscription before creating new one
   void onNewOrder(Function(Map<String, dynamic>) callback) {
     // Cancel any existing subscription first
     _newOrderSubscription?.cancel();
@@ -549,7 +453,6 @@ class BackgroundService {
   }
 
   /// Listen for immediate print events from background service
-  /// FIX: Cancel existing subscription before creating new one
   void onImmediatePrint(Function(Map<String, dynamic>) callback) {
     // Cancel any existing subscription first
     _immediatePrintSubscription?.cancel();
@@ -569,7 +472,6 @@ class BackgroundService {
   }
 
   /// Listen for socket connection status
-  /// FIX: Cancel existing subscription before creating new one
   void onSocketStatus(Function(bool) callback) {
     // Cancel any existing subscription first
     _socketStatusSubscription?.cancel();

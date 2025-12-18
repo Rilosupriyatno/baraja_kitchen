@@ -16,8 +16,11 @@ void main() async {
   // Enable keep screen on
   KeepScreenOn.turnOn();
 
-  // Initialize background service
-  await BackgroundService.initialize();
+  // Initialize background service (non-blocking - runs in parallel)
+  // This just configures the service, doesn't start it yet
+  BackgroundService.initialize().catchError((e) {
+    debugPrint('⚠️ Background service init warning: $e');
+  });
 
   // Request notification permission for Android 13+
   await _requestNotificationPermission();

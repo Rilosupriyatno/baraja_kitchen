@@ -64,6 +64,8 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
   bool _autoPrintEnabled = true;
   final BackgroundService _backgroundService = BackgroundService();
   bool _isProcessingPendingOrders = false; // Guard flag to prevent duplicate processing
+  DateTime? _lastResumeTime; // Debounce timestamp for resume handling
+  static const Duration _resumeDebounce = Duration(seconds: 2); // Minimum time between resume refreshes
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -302,9 +304,19 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
     
     switch (state) {
       case AppLifecycleState.resumed:
+        // Debounce to prevent too frequent refreshes
+        final now = DateTime.now();
+        if (_lastResumeTime != null && 
+            now.difference(_lastResumeTime!) < _resumeDebounce) {
+          if (kDebugMode) print('⏭️ Resume debounced, skipping refresh...');
+          return;
+        }
+        _lastResumeTime = now;
+        
         // App came back to foreground
         if (kDebugMode) print('🔄 App resumed - refreshing orders...');
-        _refreshOrders();
+        
+        // Process pending orders first (non-blocking)
         _processPendingBackgroundOrders();
         break;
       case AppLifecycleState.paused:
@@ -312,7 +324,7 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
         // App going to background - nothing special needed
-        // Background service will handle socket connection
+        // Socket connection is maintained by SocketService
         break;
     }
   }
