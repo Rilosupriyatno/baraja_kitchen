@@ -1,4 +1,6 @@
 // models/order.dart
+import 'package:flutter/foundation.dart';
+
 class OrderItem {
   final String name;
   final int qty;
@@ -348,14 +350,24 @@ class Order {
     String? cashierName;
     if (json['displayInfo'] != null && json['displayInfo']['cashierName'] != null) {
       cashierName = json['displayInfo']['cashierName'].toString();
+      if (kDebugMode) print('✅ Cashier name from displayInfo: $cashierName');
     } else if (json['cashierId'] != null) {
       if (json['cashierId'] is Map && json['cashierId']['username'] != null) {
         cashierName = json['cashierId']['username'].toString();
+        if (kDebugMode) print('✅ Cashier name from cashierId.username: $cashierName');
+      } else if (json['cashierId'] is String) {
+        // Jika cashierId hanya ID saja (String), kita tidak bisa ambil nama
+        if (kDebugMode) print('⚠️ cashierId is String: ${json['cashierId']}');
       }
     } else if (json['created_by'] != null) {
       if (json['created_by'] is Map && json['created_by']['employee_name'] != null) {
         cashierName = json['created_by']['employee_name'].toString();
+        if (kDebugMode) print('✅ Cashier name from created_by.employee_name: $cashierName');
       }
+    }
+    
+    if (cashierName == null && kDebugMode) {
+      print('⚠️ No cashier name found in JSON for order: ${json['order_id'] ?? json['_id']}');
     }
 
     return Order(

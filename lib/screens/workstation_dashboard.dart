@@ -485,6 +485,7 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
         orderType: printData['orderType'] ?? 'dine-in',
         source: printData['source'] ?? 'Cashier',
         paymentMethod: printData['paymentMethod'] ?? 'Cash',
+        cashierName: printData['cashierName'],  // ✅ FIX: Pass cashierName from socket data
       );
 
       _printService.autoPrintOrder(tempOrder, isOpenBill: false).then((printed) {
@@ -803,8 +804,9 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
     }
 
     // Sort orders
-    int sortOrders(Order a, Order b) => (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0));
-    int sortOrdersDesc(Order a, Order b) => (b.updatedAt ?? DateTime(0)).compareTo(a.updatedAt ?? DateTime(0));
+    // Use WIB time for sorting
+    int sortOrders(Order a, Order b) => (a.updatedAtWIB ?? DateTime(0)).compareTo(b.updatedAtWIB ?? DateTime(0));
+    int sortOrdersDesc(Order a, Order b) => (b.updatedAtWIB ?? DateTime(0)).compareTo(a.updatedAtWIB ?? DateTime(0));
     allPreparing.sort(sortOrders);
     newDone.sort(sortOrdersDesc); // Descending: terbaru di atas
     newReservations.sort(sortOrders);
@@ -869,6 +871,7 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
           totalPrice: order.totalPrice,
           source: order.source,
           paymentMethod: order.paymentMethod,
+          cashierName: order.cashierName,  // ✅ FIX: Pass cashierName from order
         );
 
         _printService.autoPrintOrder(tempOrder, isOpenBill: isOpenBill).then((printed) {
@@ -986,8 +989,9 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
 
   void _addTimeToOrder(Order order, int minutes) {
     setState(() {
-      if (order.updatedAt != null) {
-        order.updatedAt = order.updatedAt!.add(Duration(minutes: minutes));
+      // Use WIB time for adding minutes
+      if (order.updatedAtWIB != null) {
+        order.updatedAtWIB = order.updatedAtWIB!.add(Duration(minutes: minutes));
       }
     });
   }

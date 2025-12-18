@@ -259,9 +259,10 @@ mixin WorkstationDashboardLogic<T extends StatefulWidget> on State<T> implements
       alertPlayedMap.putIfAbsent(o.orderId ?? "", () => false);
     }
 
-    allPreparing.sort((a, b) => (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)));
-    newDone.sort((a, b) => (b.updatedAt ?? DateTime(0)).compareTo(a.updatedAt ?? DateTime(0))); // Descending: terbaru di atas
-    newReservations.sort((a, b) => (a.updatedAt ?? DateTime(0)).compareTo(b.updatedAt ?? DateTime(0)));
+    // Use WIB time for sorting
+    allPreparing.sort((a, b) => (a.updatedAtWIB ?? DateTime(0)).compareTo(b.updatedAtWIB ?? DateTime(0)));
+    newDone.sort((a, b) => (b.updatedAtWIB ?? DateTime(0)).compareTo(a.updatedAtWIB ?? DateTime(0))); // Descending: terbaru di atas
+    newReservations.sort((a, b) => (a.updatedAtWIB ?? DateTime(0)).compareTo(b.updatedAtWIB ?? DateTime(0)));
 
     if (mounted) {
       setState(() {
@@ -273,6 +274,10 @@ mixin WorkstationDashboardLogic<T extends StatefulWidget> on State<T> implements
     }
   }
 
+  /// @deprecated This function is NOT actively used.
+  /// The actual process is handled by `_processPrintQueue` in `workstation_dashboard.dart`.
+  /// Kept for reference only - DO NOT MODIFY, modify `workstation_dashboard.dart` instead.
+  @Deprecated('Use _processPrintQueue in workstation_dashboard.dart instead')
   Future<void> processNewItems(List<Order> allPreparing) async {
     for (var order in allPreparing) {
       if (order.orderId == null) continue;
@@ -295,10 +300,14 @@ mixin WorkstationDashboardLogic<T extends StatefulWidget> on State<T> implements
     }
   }
 
+  /// @deprecated This function is NOT actively used.
+  /// The actual auto-print is handled by `_processPrintQueue` in `workstation_dashboard.dart`.
+  /// Kept for reference only - DO NOT MODIFY, modify `workstation_dashboard.dart` instead.
+  @Deprecated('Use _processPrintQueue in workstation_dashboard.dart instead')
   Future<void> autoPrintNewItems(Order order, List<OrderItem> newItems) async {
-    if (kDebugMode) {
-      print('🖨️ Attempting to print ${newItems.length} new items from ${order.orderId}');
-    }
+
+      print('🖨️ [DEPRECATED] Attempting to print ${newItems.length} new items from ${order.orderId}');
+      print('🔍 [DEBUG] Original order.cashierName: "${order.cashierName ?? "NULL"}"');
 
     notificationService.playNewOrderNotification(
       order.orderId!,
@@ -323,7 +332,12 @@ mixin WorkstationDashboardLogic<T extends StatefulWidget> on State<T> implements
       totalPrice: order.totalPrice,
       source: order.source,
       paymentMethod: order.paymentMethod,
+      cashierName: order.cashierName,  // ✅ CRITICAL: Tambahkan cashierName!
     );
+
+    if (kDebugMode) {
+      print('🔍 [DEBUG] tempOrderForPrint.cashierName: "${tempOrderForPrint.cashierName ?? "NULL"}"');
+    }
 
     printService.autoPrintOrder(tempOrderForPrint, isOpenBill: isOpenBill).then((printed) {
       if (printed && mounted) {
@@ -365,6 +379,10 @@ mixin WorkstationDashboardLogic<T extends StatefulWidget> on State<T> implements
     }
   }
 
+  /// @deprecated This function is NOT actively used.
+  /// The actual immediate print is handled by `_handleImmediatePrint` in `workstation_dashboard.dart`.
+  /// Kept for reference only - DO NOT MODIFY, modify `workstation_dashboard.dart` instead.
+  @Deprecated('Use _handleImmediatePrint in workstation_dashboard.dart instead')
   void handleImmediatePrint(Map<String, dynamic> printData) async {
     try {
       if (!autoPrintEnabled || !printService.isConfigured) return;
@@ -425,6 +443,7 @@ mixin WorkstationDashboardLogic<T extends StatefulWidget> on State<T> implements
         orderType: printData['orderType'] ?? 'dine-in',
         source: printData['source'] ?? 'Cashier',
         paymentMethod: printData['paymentMethod'] ?? 'Cash',
+        cashierName: printData['cashierName'],  // ✅ Parse dari socket data
       );
 
       printService.autoPrintOrder(tempOrder, isOpenBill: false).then((printed) {
@@ -480,8 +499,9 @@ mixin WorkstationDashboardLogic<T extends StatefulWidget> on State<T> implements
 
   void addTimeToOrder(Order order, int minutes) {
     setState(() {
-      if (order.updatedAt != null) {
-        order.updatedAt = order.updatedAt!.add(Duration(minutes: minutes));
+      // Use WIB time for adding minutes
+      if (order.updatedAtWIB != null) {
+        order.updatedAtWIB = order.updatedAtWIB!.add(Duration(minutes: minutes));
       }
     });
   }

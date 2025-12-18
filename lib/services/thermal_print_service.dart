@@ -147,6 +147,9 @@ class ThermalPrintService {
   }
 
   @Deprecated('Use setDevice(Device) instead')
+  /// @deprecated Use setDevice() instead.
+  /// This function is kept for backward compatibility only.
+  @Deprecated('Use setDevice() instead')
   void setBarType(String? barType) {
     if (kDebugMode) {
       print('⚠️ setBarType is deprecated. Please use setDevice() instead.');
@@ -554,6 +557,7 @@ class ThermalPrintService {
       final bytes = await _generateReceiptBytesForItems(generator, order, itemsToPrint, isOpenBill: isOpenBill);
 
       if (kDebugMode) print('🔥 [INSTANT] Sending ${bytes.length} bytes to printer');
+      print('✅ ini nama kasir yang seharusnya muncul: ${order.cashierName} - PVBI');
 
       connection.output.add(Uint8List.fromList(bytes));
 
@@ -642,6 +646,8 @@ class ThermalPrintService {
       print('   Device: ${_currentDevice?.deviceName ?? "Not Set"}');
       print('   Workstation: "$_workstationName"');
       print('   Items: ${itemsToPrint.length}');
+      print('   Order ID: ${order.orderId}');
+      print('   Cashier Name: ${order.cashierName ?? "NULL"}');
     }
 
     // Header - Workstation Name (Dapur/Bar)
@@ -667,26 +673,26 @@ class ThermalPrintService {
 
     // Order ID (kode struk)
     printer.row([
-      PosColumn(text: 'Kode Struk', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: order.orderId ?? 'XXX-XXX-XXXX', width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Kode Struk', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.orderId ?? 'XXX-XXX-XXXX', width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]);
 
     // Tanggal
     printer.row([
-      PosColumn(text: 'Tanggal', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: DateFormat('yyyy/MM/dd HH:mm:ss').format(DateTime.now()), width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Tanggal', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: DateFormat('dd/MM/yy HH:mm').format(DateTime.now()), width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]);
 
     // Kasir
     printer.row([
-      PosColumn(text: 'Kasir', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: order.cashierName ?? '-', width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Kasir', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.cashierName ?? 'RFI', width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]);
 
     // Pelanggan
     printer.row([
-      PosColumn(text: 'Pelanggan', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: order.name, width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Pelanggan', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.name, width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]);
 
     // No Meja (jika Dine In)
@@ -707,8 +713,8 @@ class ThermalPrintService {
 
     // List Items
     for (var item in itemsToPrint) {
-      // Nama item dengan penanda tipe order dan qty
-      final orderTypeShort = _getOrderTypeShort(order.service);
+      // Nama item dengan penanda tipe order dan qty (gunakan item.dineType bukan order.service)
+      final orderTypeShort = _getOrderTypeShort(item.dineType ?? order.service);
       printer.row([
         PosColumn(text: orderTypeShort, width: 1, styles: const PosStyles(align: PosAlign.left, bold: true, underline: true)),
         PosColumn(text: item.name, width: 8, styles: const PosStyles(align: PosAlign.left, bold: true)),
@@ -779,10 +785,27 @@ class ThermalPrintService {
   // Helper method untuk mendapatkan singkatan tipe order
   String _getOrderTypeShort(String orderType) {
     final type = orderType.toLowerCase();
-    if (type.contains('dine') || type.contains('in')) return 'D';
-    if (type.contains('take') || type.contains('away')) return 'T';
-    if (type.contains('delivery')) return 'DL';
-    return 'D';
+    
+    // Dine-In
+    if (type.contains('dine') && type.contains('in')) return 'DI';
+    
+    // Pickup
+    if (type.contains('pickup') || type.contains('pick up')) return 'PU';
+    
+    // Delivery
+    if (type.contains('delivery')) return 'DV';
+    
+    // Take Away
+    if (type.contains('take') && type.contains('away')) return 'TA';
+    
+    // Reservation
+    if (type.contains('reservation') || type.contains('reservasi')) return 'RSV';
+    
+    // Event
+    if (type.contains('event')) return 'EV';
+    
+    // Default
+    return 'N/A';
   }
 
   // ============================================
@@ -810,30 +833,31 @@ class ThermalPrintService {
             underline: true,
           )));
     }
+    print('✅ ini nama kasir yang seharusnya muncul: ${order.cashierName} - GRBFI');
     bytes.addAll(generator.feed(1));
 
     // Order ID (kode struk)
     bytes.addAll(generator.row([
-      PosColumn(text: 'Kode Struk', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: order.orderId ?? 'XXX-XXX-XXXX', width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Kode Struk', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.orderId ?? 'XXX-XXX-XXXX', width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]));
 
     // Tanggal
     bytes.addAll(generator.row([
-      PosColumn(text: 'Tanggal', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: DateFormat('yyyy/MM/dd HH:mm:ss').format(DateTime.now()), width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Tanggal', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: DateFormat('dd/MM/yy HH:mm').format(DateTime.now()), width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]));
 
     // Kasir
     bytes.addAll(generator.row([
-      PosColumn(text: 'Kasir', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: order.cashierName ?? '-', width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Kasir', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.cashierName ?? 'BFI', width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]));
 
     // Pelanggan
     bytes.addAll(generator.row([
-      PosColumn(text: 'Pelanggan', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: order.name, width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Pelanggan', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.name, width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]));
 
     // No Meja (jika Dine In)
@@ -854,8 +878,8 @@ class ThermalPrintService {
 
     // List Items
     for (var item in itemsToPrint) {
-      // Nama item dengan penanda tipe order dan qty
-      final orderTypeShort = _getOrderTypeShort(order.service);
+      // Nama item dengan penanda tipe order dan qty (gunakan item.dineType bukan order.service)
+      final orderTypeShort = _getOrderTypeShort(item.dineType ?? order.service);
       bytes.addAll(generator.row([
         PosColumn(text: orderTypeShort, width: 1, styles: const PosStyles(align: PosAlign.left, bold: true, underline: true)),
         PosColumn(text: item.name, width: 8, styles: const PosStyles(align: PosAlign.left, bold: true)),
@@ -990,6 +1014,10 @@ class ThermalPrintService {
     }
   }
 
+  /// @deprecated This function prints the ENTIRE order.
+  /// Use autoPrintOrder() for auto-printing new items only.
+  /// Kept for manual print from UI.
+  @Deprecated('Use autoPrintOrder() for auto-printing')
   Future<bool> printOrder(Order order) async {
     if (!isConfigured) {
       if (kDebugMode) print('Printer tidak dikonfigurasi');
@@ -997,7 +1025,7 @@ class ThermalPrintService {
     }
 
     try {
-      print('Printing order ${order.orderId}');
+      print('[DEPRECATED] Printing order ${order.orderId}');
       if (_connectionType == PrinterConnectionType.wifi) {
         return await _printViaWiFi(order);
       } else {
@@ -1009,6 +1037,9 @@ class ThermalPrintService {
     }
   }
 
+  /// @deprecated This function prints entire order, not items.
+  /// Use _printViaWiFiItems() for new items printing.
+  @Deprecated('Use _printViaWiFiItems() instead')
   Future<bool> _printViaWiFi(Order order) async {
     if (_printerIp == null) return false;
     NetworkPrinter? printer;
@@ -1043,6 +1074,9 @@ class ThermalPrintService {
     }
   }
 
+  /// @deprecated This function prints entire order, not items.
+  /// Use _printViaBluetoothItems() for new items printing.
+  @Deprecated('Use _printViaBluetoothItems() instead')
   Future<bool> _printViaBluetooth(Order order) async {
     if (_bluetoothDevice == null) return false;
     BluetoothConnection? connection;
@@ -1082,10 +1116,13 @@ class ThermalPrintService {
   }
 
   // ============================================
-  // ✅ FIXED: _generateReceipt (WiFi - full order)
+  // @deprecated - Use _generateReceiptForItems instead
   // ============================================
+  /// @deprecated This generates receipt for ENTIRE order.
+  /// Use _generateReceiptForItems() for printing specific items.
+  @Deprecated('Use _generateReceiptForItems() instead')
   Future<void> _generateReceipt(NetworkPrinter printer, Order order) async {
-    if (kDebugMode) print('🖨️ Generating full receipt');
+    if (kDebugMode) print('🖨️ [DEPRECATED] Generating full receipt');
 
     // Header - Workstation Name
     printer.text(_workstationName.toUpperCase(),
@@ -1099,26 +1136,26 @@ class ThermalPrintService {
 
     // Order ID (kode struk)
     printer.row([
-      PosColumn(text: 'Kode Struk', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: order.orderId ?? 'XXX-XXX-XXXX', width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Kode Struk', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.orderId ?? 'XXX-XXX-XXXX', width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]);
 
     // Tanggal
     printer.row([
-      PosColumn(text: 'Tanggal', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: DateFormat('yyyy/MM/dd HH:mm:ss').format(DateTime.now()), width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Tanggal', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: DateFormat('dd/MM/yy HH:mm').format(DateTime.now()), width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]);
 
     // Kasir
     printer.row([
-      PosColumn(text: 'Kasir', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: order.cashierName ?? '-', width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Kasir', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.cashierName ?? 'GR', width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]);
 
     // Pelanggan
     printer.row([
-      PosColumn(text: 'Pelanggan', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: order.name, width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Pelanggan', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.name, width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]);
 
     // No Meja (jika Dine In)
@@ -1152,8 +1189,8 @@ class ThermalPrintService {
 
     // List Items
     for (var item in order.items) {
-      // Nama item dengan penanda tipe order dan qty
-      final orderTypeShort = _getOrderTypeShort(order.service);
+      // Nama item dengan penanda tipe order dan qty (gunakan item.dineType bukan order.service)
+      final orderTypeShort = _getOrderTypeShort(item.dineType ?? order.service);
       printer.row([
         PosColumn(text: orderTypeShort, width: 1, styles: const PosStyles(align: PosAlign.left, bold: true, underline: true)),
         PosColumn(text: item.name, width: 8, styles: const PosStyles(align: PosAlign.left, bold: true)),
@@ -1222,8 +1259,11 @@ class ThermalPrintService {
   }
 
   // ============================================
-  // ✅ FIXED: _generateReceiptBytes (Bluetooth - full order)
+  // @deprecated - Use _generateReceiptBytesForItems instead
   // ============================================
+  /// @deprecated This generates receipt bytes for ENTIRE order.
+  /// Use _generateReceiptBytesForItems() for printing specific items.
+  @Deprecated('Use _generateReceiptBytesForItems() instead')
   Future<List<int>> _generateReceiptBytes(Generator generator, Order order) async {
     final List<int> bytes = [];
 
@@ -1239,26 +1279,26 @@ class ThermalPrintService {
 
     // Order ID (kode struk)
     bytes.addAll(generator.row([
-      PosColumn(text: 'Kode Struk', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: order.orderId ?? 'XXX-XXX-XXXX', width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Kode Struk', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.orderId ?? 'XXX-XXX-XXXX', width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]));
 
     // Tanggal
     bytes.addAll(generator.row([
-      PosColumn(text: 'Tanggal', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: DateFormat('yyyy/MM/dd HH:mm:ss').format(DateTime.now()), width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Tanggal', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: DateFormat('dd/MM/yy HH:mm').format(DateTime.now()), width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]));
 
     // Kasir
     bytes.addAll(generator.row([
-      PosColumn(text: 'Kasir', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: order.cashierName ?? '-', width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Kasir', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.cashierName ?? 'GRB', width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]));
 
     // Pelanggan
     bytes.addAll(generator.row([
-      PosColumn(text: 'Pelanggan', width: 4, styles: const PosStyles(align: PosAlign.left)),
-      PosColumn(text: order.name, width: 8, styles: const PosStyles(align: PosAlign.right)),
+      PosColumn(text: 'Pelanggan', width: 6, styles: const PosStyles(align: PosAlign.left)),
+      PosColumn(text: order.name, width: 6, styles: const PosStyles(align: PosAlign.right)),
     ]));
 
     // No Meja (jika Dine In)
@@ -1292,8 +1332,8 @@ class ThermalPrintService {
 
     // List Items
     for (var item in order.items) {
-      // Nama item dengan penanda tipe order dan qty
-      final orderTypeShort = _getOrderTypeShort(order.service);
+      // Nama item dengan penanda tipe order dan qty (gunakan item.dineType bukan order.service)
+      final orderTypeShort = _getOrderTypeShort(item.dineType ?? order.service);
       bytes.addAll(generator.row([
         PosColumn(text: orderTypeShort, width: 1, styles: const PosStyles(align: PosAlign.left, bold: true, underline: true)),
         PosColumn(text: item.name, width: 8, styles: const PosStyles(align: PosAlign.left, bold: true)),
