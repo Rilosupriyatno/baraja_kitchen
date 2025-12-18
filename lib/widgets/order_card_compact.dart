@@ -326,8 +326,7 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
 
           const SizedBox(height: 8),
 
-          if (!widget.order.service.contains('Reservation')) ...[
-            Row(
+          if (!widget.order.service.contains('Reservation')) ...[ Row(
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -360,6 +359,39 @@ class _OrderCardCompactState extends State<OrderCardCompact> {
                     ],
                   ),
                 ),
+                // Nama Kasir
+                if (widget.order.cashierName != null) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: Colors.blue.shade300,
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.person,
+                          size: 12,
+                          color: Colors.blue.shade700,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          widget.order.cashierName!,
+                          style: TextStyle(
+                            color: Colors.blue.shade900,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ],

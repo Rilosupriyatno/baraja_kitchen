@@ -165,6 +165,7 @@ class Order {
   final double? totalPrice;
   final String? outletId;
   final String? cashierId;
+  final String? cashierName; // Nama kasir untuk ditampilkan di struk
   final String? userId;
 
   // 🆕 Tambahan untuk serving option
@@ -192,6 +193,7 @@ class Order {
     this.totalPrice,
     this.outletId,
     this.cashierId,
+    this.cashierName,
     this.userId,
     this.servingOption,
     this.foodServingTime,
@@ -342,6 +344,20 @@ class Order {
       );
     }
 
+    // Parse cashier name
+    String? cashierName;
+    if (json['displayInfo'] != null && json['displayInfo']['cashierName'] != null) {
+      cashierName = json['displayInfo']['cashierName'].toString();
+    } else if (json['cashierId'] != null) {
+      if (json['cashierId'] is Map && json['cashierId']['username'] != null) {
+        cashierName = json['cashierId']['username'].toString();
+      }
+    } else if (json['created_by'] != null) {
+      if (json['created_by'] is Map && json['created_by']['employee_name'] != null) {
+        cashierName = json['created_by']['employee_name'].toString();
+      }
+    }
+
     return Order(
       orderId: json['order_id']?.toString() ?? json['_id']?.toString(),
       name: json['user']?.toString() ?? 'Guest',
@@ -363,6 +379,7 @@ class Order {
       totalPrice: totalPrice,
       outletId: json['outlet']?.toString(),
       cashierId: json['cashierId']?.toString(),
+      cashierName: cashierName,
       userId: json['user_id']?.toString(),
       servingOption: servingOption,
       foodServingTime: foodServingTime,
@@ -658,6 +675,7 @@ class Order {
     double? totalPrice,
     String? outletId,
     String? cashierId,
+    String? cashierName,
     String? userId,
     String? servingOption,
     DateTime? foodServingTime,
@@ -683,6 +701,7 @@ class Order {
       totalPrice: totalPrice ?? this.totalPrice,
       outletId: outletId ?? this.outletId,
       cashierId: cashierId ?? this.cashierId,
+      cashierName: cashierName ?? this.cashierName,
       userId: userId ?? this.userId,
       servingOption: servingOption ?? this.servingOption,
       foodServingTime: foodServingTime ?? this.foodServingTime,
