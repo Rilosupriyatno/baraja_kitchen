@@ -71,6 +71,10 @@ dependencies:
   path_provider: ^2.1.5
   hive_generator: ^2.0.1
   shared_preferences: ^2.5.3
+  
+  # Background service for receiving orders when app is in background/closed
+  flutter_background_service: ^5.0.10
+  flutter_local_notifications: ^17.2.4
 dev_dependencies:
   flutter_test:
     sdk: flutter

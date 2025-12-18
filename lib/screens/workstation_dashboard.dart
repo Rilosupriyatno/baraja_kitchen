@@ -12,6 +12,7 @@ import '../services/socket_service.dart';
 import '../services/notification_service.dart';
 import '../services/stockmenu_service.dart';
 import '../services/thermal_print_service.dart';
+import '../services/background_service.dart';
 import '../widgets/order_card_compact.dart';
 import 'package:flutter/foundation.dart' hide Category;
 import '../widgets/out_of_stock_dialog.dart';
@@ -60,6 +61,7 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
   List<OutOfStockItem> _outOfStockItems = [];
   Timer? _stockCheckTimer;
   bool _autoPrintEnabled = true;
+  final BackgroundService _backgroundService = BackgroundService();
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -277,6 +279,73 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> {
       },
       onImmediatePrint: _handleImmediatePrint,
     );
+
+    // Start background service for receiving orders when app is in background
+    _initializeBackgroundService(outletId);
+  }
+
+  /// Initialize background service untuk menerima order saat app di background
+  Future<void> _initializeBackgroundService(String outletId) async {
+    try {
+      // Start background service with device configuration
+      await _backgroundService.startService(
+        outletId: outletId,
+        deviceData: widget.selectedDevice.toJson(),
+      );
+
+      // Listen for new orders from background
+      _backgroundService.onNewOrder((data) {
+        if (kDebugMode) print('📱 [FG] Received new order from background');
+        _refreshOrders();
+      });
+
+      // Listen for immediate print from background
+      _backgroundService.onImmediatePrint((data) {
+        if (kDebugMode) print('📱 [FG] Received immediate print from background');
+        _handleImmediatePrint(data);
+      });
+
+      // Process any pending orders that were queued while app was in background
+      _processPendingBackgroundOrders();
+
+      if (kDebugMode) {
+        print('✅ Background service initialized');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Failed to initialize background service: $e');
+      }
+    }
+  }
+
+  /// Process orders yang masuk saat app di background
+  Future<void> _processPendingBackgroundOrders() async {
+    try {
+      final pending = await _backgroundService.getPendingOrders();
+      final immediatePrintQueue = pending['immediatePrint'] as List? ?? [];
+
+      if (immediatePrintQueue.isNotEmpty) {
+        if (kDebugMode) {
+          print('📦 Processing ${immediatePrintQueue.length} pending prints from background');
+        }
+
+        for (final printData in immediatePrintQueue) {
+          if (printData is Map<String, dynamic>) {
+            _handleImmediatePrint(printData);
+          }
+        }
+
+        // Clear the queue after processing
+        _backgroundService.clearQueue();
+      }
+
+      // Refresh orders to get latest state
+      await _refreshOrders();
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error processing pending background orders: $e');
+      }
+    }
   }
 
   Future<void> _initializePrinter() async {
