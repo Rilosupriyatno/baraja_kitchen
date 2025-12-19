@@ -139,10 +139,10 @@ class StockMenuService {
       }).toList();
 
       // ✅ Filter kategori yang tidak diinginkan
-      final excludedCategories = ['ruangan', 'sparkling', 'event'];
-      categories = categories.where((category) {
-        return !excludedCategories.contains(category.name.toLowerCase());
-      }).toList();
+      // final excludedCategories = ['ruangan', 'sparkling', 'event'];
+      // categories = categories.where((category) {
+      //   return !excludedCategories.contains(category.name.toLowerCase());
+      // }).toList();
 
       return categories;
     } catch (e) {
