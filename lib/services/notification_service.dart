@@ -8,14 +8,16 @@ class NotificationService {
   factory NotificationService() => _instance;
   NotificationService._internal();
 
-  // Tambahkan dua audio player untuk dua jenis notifikasi
+  // Audio player untuk notifikasi
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   final Queue<String> _notificationQueue = Queue<String>();
   bool _isPlaying = false;
 
   // Track order IDs yang sudah pernah dinotifikasi
+  // PERFORMANCE: Limit to prevent unbounded memory growth
   final Set<String> _notifiedOrders = <String>{};
+  static const int _maxHistorySize = 500;
 
   /// Memainkan notifikasi untuk order baru
   /// Returns true jika notifikasi ditambahkan ke queue
@@ -30,6 +32,11 @@ class NotificationService {
 
     // Tandai order sebagai sudah dinotifikasi
     _notifiedOrders.add(orderId);
+    
+    // PERFORMANCE: Cleanup old entries if too many
+    if (_notifiedOrders.length > _maxHistorySize) {
+      _cleanupOldHistory();
+    }
 
     // Gunakan sound path custom atau default
     final path = soundPath ?? 'sounds/alert.mp3';
@@ -101,6 +108,26 @@ class NotificationService {
     _notifiedOrders.clear();
     if (kDebugMode) {
       print('🗑️ History notifikasi dibersihkan');
+    }
+  }
+
+  /// PERFORMANCE: Cleanup old notification history to prevent memory bloat
+  void _cleanupOldHistory() {
+    final toRemove = _notifiedOrders.length - (_maxHistorySize ~/ 2);
+    if (toRemove > 0) {
+      final iterator = _notifiedOrders.iterator;
+      int removed = 0;
+      final idsToRemove = <String>[];
+      while (iterator.moveNext() && removed < toRemove) {
+        idsToRemove.add(iterator.current);
+        removed++;
+      }
+      for (final id in idsToRemove) {
+        _notifiedOrders.remove(id);
+      }
+      if (kDebugMode) {
+        print('🧹 Cleaned up $removed old notification entries');
+      }
     }
   }
 

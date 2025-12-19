@@ -454,13 +454,13 @@ class ThermalPrintService {
 
         _recordSuccess();
 
-        try {
+        // PERFORMANCE: Fire-and-forget logging - don't block print completion
+        for (final logId in logIds) {
           final duration = DateTime.now().difference(startTime).inMilliseconds;
-          for (final logId in logIds) {
-            await PrintTrackingService().logPrintSuccess(logId, duration, wasProblematic: false);
-          }
-        } catch (e) {
-          if (kDebugMode) print('⚠️ Failed to log success: $e');
+          PrintTrackingService().logPrintSuccess(logId, duration, wasProblematic: false)
+              .catchError((e) {
+            if (kDebugMode) print('⚠️ Failed to log success: $e');
+          });
         }
 
         if (kDebugMode) {
@@ -469,14 +469,13 @@ class ThermalPrintService {
         return true;
       } else {
         _recordFailure();
-        try {
-          for (final logId in logIds) {
-            await PrintTrackingService().logPrintFailure(
-                logId, 'auto_print_failed', 'Print gagal'
-            );
-          }
-        } catch (e) {
-          if (kDebugMode) print('⚠️ Failed to log failure: $e');
+        // PERFORMANCE: Fire-and-forget logging
+        for (final logId in logIds) {
+          PrintTrackingService().logPrintFailure(
+              logId, 'auto_print_failed', 'Print gagal'
+          ).catchError((e) {
+            if (kDebugMode) print('⚠️ Failed to log failure: $e');
+          });
         }
         if (kDebugMode) {
           print('❌ PRINT FAILED: ${order.orderId}');
@@ -486,14 +485,13 @@ class ThermalPrintService {
     } catch (e) {
       if (kDebugMode) print('❌ ERROR IN AUTO PRINT: $e');
       _recordFailure();
-      try {
-        for (final logId in logIds) {
-          await PrintTrackingService().logPrintFailure(
-              logId, 'auto_print_error', e.toString()
-          );
-        }
-      } catch (e2) {
-        if (kDebugMode) print('⚠️ Failed to log error: $e2');
+      // PERFORMANCE: Fire-and-forget logging
+      for (final logId in logIds) {
+        PrintTrackingService().logPrintFailure(
+            logId, 'auto_print_error', e.toString()
+        ).catchError((e2) {
+          if (kDebugMode) print('⚠️ Failed to log error: $e2');
+        });
       }
       return false;
     }

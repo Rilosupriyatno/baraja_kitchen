@@ -65,7 +65,9 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
   final BackgroundService _backgroundService = BackgroundService();
   bool _isProcessingPendingOrders = false; // Guard flag to prevent duplicate processing
   DateTime? _lastResumeTime; // Debounce timestamp for resume handling
+  DateTime? _lastRefreshTime; // Debounce for refresh calls
   static const Duration _resumeDebounce = Duration(seconds: 2); // Minimum time between resume refreshes
+  static const Duration _refreshDebounce = Duration(seconds: 5); // Minimum time between refresh calls
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -825,14 +827,17 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
   }
 
   void _initializeTimers() {
-    // Timer for checking late orders only - no setState for time
-    _mainTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    // PERFORMANCE: Timer for checking late orders - reduced from 1s to 5s
+    // Late order check doesn't need to be so frequent
+    _mainTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (mounted) {
         _checkForLateOrders();
       }
     });
 
-    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) => _refreshOrders());
+    // PERFORMANCE: Refresh timer - increased from 15s to 30s
+    // Reduces network calls and CPU usage
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _refreshOrders());
   }
 
   void _checkForLateOrders() {
@@ -895,8 +900,17 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
     }
   }
 
-  // ✅ UPDATED: Using new workstation endpoint
+  // ✅ UPDATED: Using new workstation endpoint with debounce
   Future<void> _refreshOrders() async {
+    // PERFORMANCE: Debounce refresh calls
+    final now = DateTime.now();
+    if (_lastRefreshTime != null && 
+        now.difference(_lastRefreshTime!) < _refreshDebounce) {
+      if (kDebugMode) print('⏭️ Refresh debounced, skipping...');
+      return;
+    }
+    _lastRefreshTime = now;
+    
     try {
       if (kDebugMode) {
         print('🔄 Refreshing orders for ${widget.selectedDevice.workstationTypeString}...');
