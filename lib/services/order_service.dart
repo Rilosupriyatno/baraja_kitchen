@@ -20,10 +20,28 @@ class OrderService {
         print('   Location: ${device.location}');
       }
 
+      // 🔧 Build URL with location parameter for bar workstation
+      String url = '$baseUrl/api/workstation/$workstationType/orders';
+      
+      // Add location filter for bar workstation to ensure correct routing
+      if (workstationType == 'bar' && device.location.isNotEmpty) {
+        url += '?location=${device.location}';
+        if (kDebugMode) {
+          print('   🔧 Bar routing: filtering by location=${device.location}');
+        }
+      }
+
+      // ✅ FIX: Add timeout to prevent hang when network is slow/unavailable
       final response = await http.get(
-        Uri.parse('$baseUrl/api/workstation/$workstationType/orders'),
+        Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
+        },
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          if (kDebugMode) print('⏱️ Request timeout for workstation orders');
+          throw Exception('Request timeout');
         },
       );
 

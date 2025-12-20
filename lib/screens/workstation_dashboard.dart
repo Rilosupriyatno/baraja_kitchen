@@ -318,8 +318,20 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
         // App came back to foreground
         if (kDebugMode) print('🔄 App resumed - refreshing orders...');
         
-        // Process pending orders first (non-blocking)
-        _processPendingBackgroundOrders();
+        // ✅ FIX: Process pending orders in isolated async context with timeout
+        // This prevents blocking the main thread if something goes wrong
+        Future(() async {
+          try {
+            await _processPendingBackgroundOrders().timeout(
+              const Duration(seconds: 15),
+              onTimeout: () {
+                if (kDebugMode) print('⏱️ Resume processing timeout, continuing...');
+              },
+            );
+          } catch (e) {
+            if (kDebugMode) print('❌ Error during resume processing: $e');
+          }
+        });
         break;
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
