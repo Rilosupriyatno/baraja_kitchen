@@ -273,7 +273,7 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
     SocketService.connect(
       outletId: outletId,
       device: widget.selectedDevice,
-      onNewOrder: (_) => _refreshOrders(),
+      onNewOrder: (_) => _refreshOrders(forceRefresh: true),  // ✅ FIX: Bypass debounce for immediate processing
       onBeverageOrder: (beverageData) {
         if (widget.selectedDevice.shouldHandleBeverages) {
           _handleBeverageOrder(beverageData);
@@ -1142,7 +1142,11 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
     }
   }
 
+  /// Process print queue SEQUENTIALLY to avoid concurrent printer connection conflicts
   void _processPrintQueue(List<Order> allPreparing) async {
+    // 1. Collect all orders with new items first
+    final List<(Order, List<OrderItem>, bool)> ordersToPrint = [];
+    
     for (var order in allPreparing) {
       if (order.orderId == null) continue;
 
@@ -1155,12 +1159,8 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
       }
 
       if (newItems.isNotEmpty && _autoPrintEnabled && _printService.isConfigured) {
-        _notificationService
-            .playNewOrderNotification(order.orderId!, soundPath: 'sounds/alert.mp3')
-            .catchError((_) => false);
-
         final isOpenBill = order.items.length > newItems.length;
-
+        
         final tempOrder = Order(
           orderId: order.orderId,
           name: order.name,
@@ -1177,15 +1177,42 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
           totalPrice: order.totalPrice,
           source: order.source,
           paymentMethod: order.paymentMethod,
-          cashierName: order.cashierName,  // ✅ FIX: Pass cashierName from order
+          cashierName: order.cashierName,
         );
-
-        _printService.autoPrintOrder(tempOrder, isOpenBill: isOpenBill).then((printed) {
-          if (printed && mounted) _showPrintSuccessSnackbar(order.orderId!);
-        }).catchError((e) {
-          if (kDebugMode) print('❌ Print error: $e');
-        });
+        
+        ordersToPrint.add((tempOrder, newItems, isOpenBill));
       }
+    }
+    
+    if (ordersToPrint.isEmpty) return;
+    
+    if (kDebugMode) {
+      print('🖨️ [PRINT QUEUE] Processing ${ordersToPrint.length} orders sequentially...');
+    }
+    
+    // 2. Process print queue SEQUENTIALLY to avoid concurrent connection conflicts
+    for (var (order, newItems, isOpenBill) in ordersToPrint) {
+      // Play notification
+      _notificationService
+          .playNewOrderNotification(order.orderId!, soundPath: 'sounds/alert.mp3')
+          .catchError((_) => false);
+      
+      try {
+        // ✅ FIX: AWAIT each print to ensure sequential processing
+        final printed = await _printService.autoPrintOrder(order, isOpenBill: isOpenBill);
+        
+        if (printed && mounted) {
+          _showPrintSuccessSnackbar(order.orderId!);
+        } else if (!printed && kDebugMode) {
+          print('❌ Print failed for ${order.orderId}');
+        }
+      } catch (e) {
+        if (kDebugMode) print('❌ Print error for ${order.orderId}: $e');
+      }
+    }
+    
+    if (kDebugMode) {
+      print('✅ [PRINT QUEUE] Completed processing ${ordersToPrint.length} orders');
     }
   }
 
