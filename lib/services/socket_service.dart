@@ -19,6 +19,7 @@ class SocketService {
     Function(Map<String, dynamic>)? onBeverageOrder,
     Function(Map<String, dynamic>)? onStockUpdate,
     Function(Map<String, dynamic>)? onImmediatePrint,
+    Function(Map<String, dynamic>)? onOrderStatusUpdated,  // ✅ NEW: For Reserved→OnProcess
   }) {
     final baseUrl = dotenv.env['BASE_URL'] ?? 'http://localhost:3000';
     _currentDevice = device;
@@ -41,8 +42,9 @@ class SocketService {
           .setTransports(['websocket'])
           .enableForceNew()
           .enableAutoConnect()
-          .setReconnectionDelay(1000)
-          .setReconnectionAttempts(5)
+          .setReconnectionDelay(500)     // ⚡ OPTIMIZED: 500ms faster reconnect
+          .setReconnectionAttempts(10)   // ⚡ OPTIMIZED: More retry attempts
+          .setReconnectionDelayMax(3000) // ⚡ Max 3s between retries
           .build(),
     );
 
@@ -179,18 +181,53 @@ class SocketService {
 
     _socket!.on('new_order', (data) async {
       if (kDebugMode) {
-        print('🔥 New order event received');
+        print('╔════════════════════════════════════════════════╗');
+        print('🔥 NEW ORDER EVENT RECEIVED - INSTANT');
+        print('╠════════════════════════════════════════════════╣');
+        print('   Time: ${DateTime.now()}');
+        print('   Data: ${data?.toString().substring(0, 100) ?? 'null'}...');
+        print('╚════════════════════════════════════════════════╝');
       }
 
-      try {
-        // ✅ Use new workstation endpoint
-        final orders = await OrderService.getWorkstationOrders(device);
-        if (onNewOrder != null && orders.isNotEmpty) {
-          onNewOrder(orders.first);
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print('⚠️ Error handling new order: $e');
+      // ⚡ OPTIMIZED: Just trigger callback immediately
+      // Dashboard will handle refresh, no blocking HTTP call here
+      if (onNewOrder != null) {
+        try {
+          // Quick refresh using cached device context
+          // This triggers _refreshOrders which handles everything
+          onNewOrder(Order(
+            orderId: data?['orderId'] ?? data?['order_id'] ?? 'unknown',
+            name: data?['customerName'] ?? 'New Order',
+            table: data?['tableNumber'] ?? '',
+            status: 'Waiting',
+            items: [],
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+            createdAtWIB: DateTime.now(),
+            updatedAtWIB: DateTime.now(),
+            service: data?['orderType'] ?? 'Dine-In',
+            orderType: data?['orderType'] ?? 'dine-in',
+            source: data?['source'] ?? 'Cashier',
+            paymentMethod: 'Cash',
+          ));
+        } catch (e) {
+          if (kDebugMode) print('⚠️ Error in new order callback: $e');
+          // Fallback: still notify even with minimal data
+          onNewOrder(Order(
+            orderId: 'unknown',
+            name: 'New Order',
+            table: '',
+            status: 'Waiting',
+            items: [],
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+            createdAtWIB: DateTime.now(),
+            updatedAtWIB: DateTime.now(),
+            service: 'Dine-In',
+            orderType: 'dine-in',
+            source: 'Cashier',
+            paymentMethod: 'Cash',
+          ));
         }
       }
     });
@@ -223,7 +260,19 @@ class SocketService {
 
     _socket!.on('order_status_updated', (data) {
       if (kDebugMode) {
-        print('🔄 Order status updated: ${data['orderId']} -> ${data['status']}');
+        print('╔════════════════════════════════════════════════╗');
+        print('🔄 ORDER STATUS UPDATED');
+        print('╠════════════════════════════════════════════════╣');
+        print('   Order ID: ${data['orderId'] ?? data['order_id']}');
+        print('   New Status: ${data['status']}');
+        print('   Updated By: ${data['updatedBy']}');
+        print('   Time: ${DateTime.now()}');
+        print('╚════════════════════════════════════════════════╝');
+      }
+
+      // ✅ NEW: Trigger callback untuk handle print jika status = OnProcess
+      if (onOrderStatusUpdated != null) {
+        onOrderStatusUpdated(Map<String, dynamic>.from(data));
       }
     });
 

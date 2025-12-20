@@ -67,7 +67,7 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
   DateTime? _lastResumeTime; // Debounce timestamp for resume handling
   DateTime? _lastRefreshTime; // Debounce for refresh calls
   static const Duration _resumeDebounce = Duration(seconds: 2); // Minimum time between resume refreshes
-  static const Duration _refreshDebounce = Duration(seconds: 5); // Minimum time between refresh calls
+  static const Duration _refreshDebounce = Duration(seconds: 2); // ⚡ OPTIMIZED: 2s debounce (was 5s)
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -284,6 +284,7 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
         _loadStockMenu();
       },
       onImmediatePrint: _handleImmediatePrint,
+      onOrderStatusUpdated: _handleOrderStatusUpdate,  // ✅ NEW: For Reserved→OnProcess
     );
 
     // Start background service for receiving orders when app is in background
@@ -318,12 +319,11 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
         // App came back to foreground
         if (kDebugMode) print('🔄 App resumed - refreshing orders...');
         
-        // ✅ FIX: Process pending orders in isolated async context with timeout
-        // This prevents blocking the main thread if something goes wrong
+        // ⚡ OPTIMIZED: Reduced timeout from 15s to 3s
         Future(() async {
           try {
             await _processPendingBackgroundOrders().timeout(
-              const Duration(seconds: 15),
+              const Duration(seconds: 3),  // ⚡ Fast timeout
               onTimeout: () {
                 if (kDebugMode) print('⏱️ Resume processing timeout, continuing...');
               },
@@ -378,6 +378,7 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
   }
 
   /// Process orders yang masuk saat app di background
+  /// ⚡ OPTIMIZED: Parallelized pending orders and refresh
   Future<void> _processPendingBackgroundOrders() async {
     // Guard to prevent duplicate calls
     if (_isProcessingPendingOrders) {
@@ -386,32 +387,52 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
     }
     
     _isProcessingPendingOrders = true;
+    final startTime = DateTime.now();
     
     try {
-      final pending = await _backgroundService.getPendingOrders();
+      // ⚡ OPTIMIZED: Run getPendingOrders and refreshOrders in PARALLEL
+      final pendingFuture = _backgroundService.getPendingOrders().timeout(
+        const Duration(seconds: 1),  // Short timeout for queued items
+        onTimeout: () => {'orders': [], 'immediatePrint': []},
+      );
+      
+      final refreshFuture = _refreshOrders(forceRefresh: true);
+      
+      // Wait for both to complete
+      final results = await Future.wait([
+        pendingFuture,
+        refreshFuture,
+      ]);
+      
+      final pending = results[0] as Map<String, dynamic>;
       final immediatePrintQueue = pending['immediatePrint'] as List? ?? [];
 
       if (immediatePrintQueue.isNotEmpty) {
         if (kDebugMode) {
-          print('📦 Processing ${immediatePrintQueue.length} pending prints from background');
+          print('📦 Processing ${immediatePrintQueue.length} pending prints');
         }
 
+        // Process prints without blocking
         for (final printData in immediatePrintQueue) {
           if (printData is Map<String, dynamic>) {
             _handleImmediatePrint(printData);
           }
         }
 
-        // Clear the queue after processing
+        // Clear queue asynchronously (don't wait)
         _backgroundService.clearQueue();
       }
-
-      // Refresh orders to get latest state
-      await _refreshOrders();
+      
+      if (kDebugMode) {
+        final duration = DateTime.now().difference(startTime).inMilliseconds;
+        print('⚡ Resume completed in ${duration}ms');
+      }
     } catch (e) {
       if (kDebugMode) {
         print('❌ Error processing pending background orders: $e');
       }
+      // Fallback: just refresh orders
+      await _refreshOrders(forceRefresh: true);
     } finally {
       _isProcessingPendingOrders = false;
     }
@@ -756,6 +777,67 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
   //     if (kDebugMode) print('❌ Error handling immediate print: $e');
   //   }
   // }
+  // ✅ NEW: Handler untuk order status update (Reserved → OnProcess)
+  // Ini dipanggil saat backend auto-activate reservasi yang waktunya sudah tiba
+  void _handleOrderStatusUpdate(Map<String, dynamic> data) {
+    try {
+      final orderId = data['orderId'] as String? ?? data['order_id'] as String?;
+      final status = data['status'] as String?;
+      final updatedBy = data['updatedBy'] as String? ?? 'Unknown';
+
+      if (orderId == null || status == null) return;
+
+      if (kDebugMode) {
+        print('╔═══════════════════════════════════════════════════════╗');
+        print('🔄 [ORDER STATUS UPDATE HANDLER]');
+        print('├───────────────────────────────────────────────────────┤');
+        print('   Order ID: $orderId');
+        print('   New Status: $status');
+        print('   Updated By: $updatedBy');
+        print('   Device: ${widget.selectedDevice.deviceName}');
+        print('╚═══════════════════════════════════════════════════════╝');
+      }
+
+      // Jika order transisi ke OnProcess, hapus dari reservation tracking
+      // dan refresh segera untuk trigger print
+      if (status == 'OnProcess') {
+        // ✅ CRITICAL: Jika ini adalah reservation yang di-activate,
+        // hapus items dari displayedIds agar bisa di-print
+        if (_reservationOrderIds.contains(orderId)) {
+          if (kDebugMode) {
+            print('🔄 [AUTO-ACTIVATE] Reservation $orderId → OnProcess');
+            print('   Removing from reservation tracking for print...');
+          }
+          
+          _reservationOrderIds.remove(orderId);
+          
+          // Cari order di list reservations dan hapus itemnya dari displayedIds
+          for (var order in reservations) {
+            if (order.orderId == orderId) {
+              for (final item in order.items) {
+                _displayedItemIds.remove(item.itemId);
+                if (kDebugMode) {
+                  print('   ❌ Removed item ${item.itemId} from displayed');
+                }
+              }
+              break;
+            }
+          }
+        }
+
+        // Force immediate refresh to get the updated order and trigger print
+        // This bypasses the normal 30-second refresh interval
+        if (kDebugMode) {
+          print('🔄 [IMMEDIATE REFRESH] Triggering FORCED refresh for print...');
+        }
+        
+        // Use microtask to ensure UI updates first, then force refresh
+        Future.microtask(() => _refreshOrders(forceRefresh: true));
+      }
+    } catch (e) {
+      if (kDebugMode) print('❌ Error in _handleOrderStatusUpdate: $e');
+    }
+  }
 
   Future<void> _loadOutOfStockItems() async {
     try {
@@ -847,9 +929,8 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
       }
     });
 
-    // PERFORMANCE: Refresh timer - increased from 15s to 30s
-    // Reduces network calls and CPU usage
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _refreshOrders());
+    // PERFORMANCE: Refresh timer - ⚡ OPTIMIZED: 15s (was 30s)
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) => _refreshOrders());
   }
 
   void _checkForLateOrders() {
@@ -913,10 +994,11 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
   }
 
   // ✅ UPDATED: Using new workstation endpoint with debounce
-  Future<void> _refreshOrders() async {
-    // PERFORMANCE: Debounce refresh calls
+  // forceRefresh bypasses debounce (used for Reserved→OnProcess transition)
+  Future<void> _refreshOrders({bool forceRefresh = false}) async {
+    // PERFORMANCE: Debounce refresh calls (unless forced)
     final now = DateTime.now();
-    if (_lastRefreshTime != null && 
+    if (!forceRefresh && _lastRefreshTime != null && 
         now.difference(_lastRefreshTime!) < _refreshDebounce) {
       if (kDebugMode) print('⏭️ Refresh debounced, skipping...');
       return;
@@ -925,7 +1007,7 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
     
     try {
       if (kDebugMode) {
-        print('🔄 Refreshing orders for ${widget.selectedDevice.workstationTypeString}...');
+        print('🔄 Refreshing orders for ${widget.selectedDevice.workstationTypeString}${forceRefresh ? ' (FORCED)' : ''}...');
       }
 
       final ordersMap = await OrderService.refreshWorkstationOrders(widget.selectedDevice);

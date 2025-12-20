@@ -38,7 +38,7 @@ class OrderService {
           'Content-Type': 'application/json',
         },
       ).timeout(
-        const Duration(seconds: 10),
+        const Duration(seconds: 5),  // ⚡ OPTIMIZED: 5s timeout (was 10s)
         onTimeout: () {
           if (kDebugMode) print('⏱️ Request timeout for workstation orders');
           throw Exception('Request timeout');

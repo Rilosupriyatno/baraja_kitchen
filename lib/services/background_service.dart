@@ -416,9 +416,9 @@ class BackgroundService {
     // Request pending orders
     service.invoke('getPendingOrders');
 
-    // Timeout after 2 seconds
+    // ⚡ OPTIMIZED: Timeout after 1 second (was 2s)
     return completer.future.timeout(
-      const Duration(seconds: 2),
+      const Duration(seconds: 1),
       onTimeout: () {
         _pendingOrdersSubscription?.cancel();
         _pendingOrdersSubscription = null;

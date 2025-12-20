@@ -89,14 +89,76 @@ class _UnifiedStockScreenState extends State<UnifiedStockScreen> {
   }
 
   // Data Loading Methods
+  // ⚡ OPTIMIZED: Try single-call first, fallback to legacy if fails
   Future<void> _loadData() async {
     if (_cacheManager.isDataLoaded(widget.workstation)) {
       print('📦 Loading from cache for ${widget.workstation}');
       _loadFromCache();
     } else {
-      print('🌐 Loading from server for ${widget.workstation}');
-      await _loadAllDataFromServer();
+      print('⚡ [OPTIMIZED] Trying single-call load for ${widget.workstation}');
+      
+      // Try optimized endpoint first
+      final optimizedData = await StockMenuService.getAllWorkstationData(widget.workstation);
+      
+      if (optimizedData != null) {
+        // SUCCESS: Use optimized data
+        _loadFromOptimizedData(optimizedData);
+      } else {
+        // FALLBACK: Use legacy sequential loading
+        print('⚠️ Optimized endpoint failed, falling back to legacy load...');
+        await _loadAllDataFromServer();
+      }
     }
+  }
+
+  // ⚡ OPTIMIZED: Load from single-call optimized data
+  void _loadFromOptimizedData(WorkstationData data) {
+    setState(() {
+      _isInitialLoading = true;
+      _loadingProgress = 0.5;
+      _loadingMessage = 'Memproses data...';
+    });
+
+    // Convert WorkstationData to local format
+    _categories = data.categories.map((c) => c.category).toList();
+    _menuCache.clear();
+    
+    for (final categoryWithMenus in data.categories) {
+      _menuCache[categoryWithMenus.category.id] = categoryWithMenus.menus;
+    }
+
+    // Save to cache for next time
+    _cacheManager.saveCategories(widget.workstation, _categories);
+    _cacheManager.saveAllMenus(widget.workstation, Map.from(_menuCache));
+    _cacheManager.markAsLoaded(widget.workstation);
+
+    setState(() {
+      _loadingProgress = 1.0;
+      _loadingMessage = 'Selesai!';
+      _isInitialLoading = false;
+
+      if (widget.preSelectedCategoryId != null && _categories.isNotEmpty) {
+        try {
+          _selectedCategory = _categories.firstWhere(
+            (cat) => cat.id == widget.preSelectedCategoryId,
+          );
+        } catch (e) {
+          _selectedCategory = _categories.first;
+        }
+      } else if (_categories.isNotEmpty) {
+        _selectedCategory = _categories.first;
+      }
+
+      _displayMenusFromCache();
+
+      if (widget.preSelectedCategoryId != null && _selectedCategory != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToSelectedCategory();
+        });
+      }
+    });
+
+    print('✅ [OPTIMIZED] Data loaded: ${data.totalMenus} menus, ${data.totalCategories} categories');
   }
 
   void _loadFromCache() {

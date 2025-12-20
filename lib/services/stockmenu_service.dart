@@ -14,14 +14,14 @@ class StockMenuService {
     String workstation,
   ) async {
     try {
-      // Fetch menu items untuk mendapatkan workstation info
+      // ⚡ OPTIMIZED: Add 5s timeout
       final menuItemsResponse = await http.get(
         Uri.parse('$baseUrl/api/menu/all-menu-items-backoffice'),
         headers: {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true',
         },
-      );
+      ).timeout(const Duration(seconds: 5));
 
       if (menuItemsResponse.statusCode != 200) {
         throw Exception(
@@ -44,14 +44,14 @@ class StockMenuService {
           .map((item) => item['id'].toString())
           .toSet();
 
-      // Fetch stock menu
+      // ⚡ OPTIMIZED: Add 5s timeout
       final stockResponse = await http.get(
         Uri.parse('$baseUrl/api/product/menu-stock/manual-stock'),
         headers: {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true',
         },
-      );
+      ).timeout(const Duration(seconds: 5));
 
       if (stockResponse.statusCode != 200) {
         throw Exception(
@@ -85,14 +85,14 @@ class StockMenuService {
     String workstation,
   ) async {
     try {
-      // Fetch menu items untuk mendapatkan kategori
+      // ⚡ OPTIMIZED: Add 5s timeout
       final menuItemsResponse = await http.get(
         Uri.parse('$baseUrl/api/menu/all-menu-items-backoffice'),
         headers: {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true',
         },
-      );
+      ).timeout(const Duration(seconds: 5));
 
       if (menuItemsResponse.statusCode != 200) {
         throw Exception(
@@ -154,11 +154,11 @@ class StockMenuService {
     String workstation,
   ) async {
     try {
-      // Fetch menu items untuk workstation
+      // ⚡ OPTIMIZED: Add 5s timeout
       final menuItemsResponse = await http.get(
         Uri.parse('$baseUrl/api/menu/all-menu-items-backoffice'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(const Duration(seconds: 5));
 
       if (menuItemsResponse.statusCode != 200) {
         throw Exception(
@@ -180,11 +180,11 @@ class StockMenuService {
           )
           .toList();
 
-      // Fetch stock data
+      // ⚡ OPTIMIZED: Add 5s timeout
       final stockResponse = await http.get(
         Uri.parse('$baseUrl/api/product/menu-stock/manual-stock'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(const Duration(seconds: 5));
 
       if (stockResponse.statusCode != 200) {
         throw Exception('Failed to load stock: ${stockResponse.statusCode}');
@@ -248,14 +248,14 @@ class StockMenuService {
     String workstation,
   ) async {
     try {
-      // Fetch menu items
+      // ⚡ OPTIMIZED: Add 5s timeout
       final menuItemsResponse = await http.get(
         Uri.parse('$baseUrl/api/menu/all-menu-items-backoffice'),
         headers: {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true',
         },
-      );
+      ).timeout(const Duration(seconds: 5));
 
       if (menuItemsResponse.statusCode != 200) {
         throw Exception(
@@ -300,10 +300,11 @@ class StockMenuService {
           .map((item) => item['id'].toString())
           .toSet();
 
+      // ⚡ OPTIMIZED: Add 5s timeout
       final stockResponse = await http.get(
         Uri.parse('$baseUrl/api/product/menu-stock/manual-stock'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(const Duration(seconds: 5));
 
       if (stockResponse.statusCode != 200) {
         throw Exception(
@@ -391,4 +392,85 @@ class StockMenuService {
       rethrow;
     }
   }
+
+  // ⚡ OPTIMIZED: Single-call untuk semua data workstation
+  // Menggantikan 20+ sequential calls dengan 1 call
+  static Future<WorkstationData?> getAllWorkstationData(String workstation) async {
+    try {
+      print('⚡ [OPTIMIZED] Loading all data for $workstation in single call...');
+      final startTime = DateTime.now();
+      
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/menu/workstation-data?workstation=$workstation'),
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+      ).timeout(const Duration(seconds: 10));  // 10s timeout for complete data
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to load workstation data: ${response.statusCode}');
+      }
+
+      final Map<String, dynamic> jsonData = json.decode(response.body);
+
+      if (jsonData['success'] != true || jsonData['data'] == null) {
+        throw Exception('Invalid response format');
+      }
+
+      final data = jsonData['data'];
+      final List<dynamic> categoriesJson = data['categories'] ?? [];
+
+      // Parse categories with menus
+      List<CategoryWithMenus> categories = categoriesJson.map((catJson) {
+        final List<dynamic> menusJson = catJson['menus'] ?? [];
+        
+        List<StockMenu> menus = menusJson.map((menuJson) => StockMenu(
+          menuItemId: menuJson['menuItemId'] ?? '',
+          name: menuJson['name'] ?? '',
+          category: catJson['name'] ?? '',  // Use category name from parent
+          calculatedStock: menuJson['calculatedStock'] ?? 0,
+          manualStock: menuJson['manualStock'] ?? 0,
+          effectiveStock: menuJson['effectiveStock'] ?? 0,
+        )).toList();
+
+        return CategoryWithMenus(
+          category: Category(
+            id: catJson['id'] ?? '',
+            name: catJson['name'] ?? '',
+            itemCount: catJson['itemCount'] ?? 0,
+          ),
+          menus: menus,
+        );
+      }).toList();
+
+      final duration = DateTime.now().difference(startTime).inMilliseconds;
+      print('✅ [OPTIMIZED] Loaded ${data['totalMenus']} menus in ${data['totalCategories']} categories (${duration}ms)');
+
+      return WorkstationData(
+        workstation: data['workstation'] ?? workstation,
+        categories: categories,
+        totalMenus: data['totalMenus'] ?? 0,
+        totalCategories: data['totalCategories'] ?? 0,
+      );
+    } catch (e) {
+      print('❌ Error in getAllWorkstationData: $e');
+      return null;  // Return null so caller can fallback to legacy method
+    }
+  }
+}
+
+// ⚡ Data class untuk hasil optimized endpoint
+class WorkstationData {
+  final String workstation;
+  final List<CategoryWithMenus> categories;
+  final int totalMenus;
+  final int totalCategories;
+
+  WorkstationData({
+    required this.workstation,
+    required this.categories,
+    required this.totalMenus,
+    required this.totalCategories,
+  });
 }
