@@ -34,8 +34,21 @@ class _DeviceSelectionScreenState extends State<DeviceSelectionScreen> {
 
     try {
       final devices = await _deviceService.getActiveDevices();
+      
+      // 🔧 Filter out kasir devices - they are cashier identity, not workstations
+      final workstationDevices = devices.where((device) {
+        final deviceId = device.deviceId.toUpperCase();
+        final name = device.deviceName.toLowerCase();
+        
+        // Exclude kasir devices: deviceId starts with KSR- or name contains "kasir"
+        final isKasirDevice = deviceId.startsWith('KSR') || 
+                              name.contains('kasir');
+        
+        return !isKasirDevice;
+      }).toList();
+      
       setState(() {
-        _devices = devices;
+        _devices = workstationDevices;
         _isLoading = false;
       });
     } catch (e) {
