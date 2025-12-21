@@ -273,7 +273,7 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
     SocketService.connect(
       outletId: outletId,
       device: widget.selectedDevice,
-      onNewOrder: (_) => _refreshOrders(forceRefresh: true),  // ✅ FIX: Bypass debounce for immediate processing
+      onNewOrder: _handleNewOrder,  // ✅ OPTIMIZED: Use optimistic update handler
       onBeverageOrder: (beverageData) {
         if (widget.selectedDevice.shouldHandleBeverages) {
           _handleBeverageOrder(beverageData);
@@ -991,6 +991,52 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
         });
       }
     }
+  }
+
+  // ✅ FX: New handler for optimistic updates from socket
+  void _handleNewOrder(Order newOrder) {
+    if (kDebugMode) {
+      print('⚡ [OPTIMISTIC] Handling new order: ${newOrder.orderId}');
+    }
+
+    // If order has no items (parsing failed), fallback to full refresh
+    if (newOrder.items.isEmpty) {
+      if (kDebugMode) print('⚠️ Empty items in new order, falling back to full refresh');
+      _refreshOrders(forceRefresh: true);
+      return;
+    }
+
+    // Create a temporary map with current state + new order
+    // We clone the lists to avoid direct mutation issues
+    final currentWaiting = List<Order>.from(queue);
+    final currentPreparing = List<Order>.from(preparing);
+    final currentDone = List<Order>.from(done);
+    final currentReservations = List<Order>.from(reservations);
+
+    // Add new order to appropriate list if it doesn't exist
+    if (newOrder.status.toLowerCase() == 'waiting' || newOrder.status.toLowerCase() == 'pending') {
+      final exists = currentWaiting.any((o) => o.orderId == newOrder.orderId);
+      if (!exists) {
+        currentWaiting.add(newOrder);
+      }
+    } else if (newOrder.status.toLowerCase() == 'onprocess' || newOrder.status.toLowerCase() == 'preparing') {
+      final exists = currentPreparing.any((o) => o.orderId == newOrder.orderId);
+      if (!exists) {
+        currentPreparing.add(newOrder);
+      }
+    }
+
+    // Re-run the core logic with local data
+    _mergeOrdersWithAlertState({
+      'waiting': currentWaiting,
+      'preparing': currentPreparing,
+      'completed': currentDone,
+      'reservations': currentReservations,
+    });
+    
+    // Safety net: Trigger background refresh eventually
+    if (kDebugMode) print('✅ Optimistic update applied, scheduling background sync...');
+    Future.delayed(const Duration(seconds: 10), () => _refreshOrders(forceRefresh: false));
   }
 
   // ✅ UPDATED: Using new workstation endpoint with debounce

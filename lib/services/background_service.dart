@@ -418,7 +418,7 @@ class BackgroundService {
 
     // ⚡ OPTIMIZED: Timeout after 1 second (was 2s)
     return completer.future.timeout(
-      const Duration(seconds: 1),
+      const Duration(seconds: 3),
       onTimeout: () {
         _pendingOrdersSubscription?.cancel();
         _pendingOrdersSubscription = null;

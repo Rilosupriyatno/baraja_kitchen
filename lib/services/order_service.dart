@@ -31,38 +31,56 @@ class OrderService {
         }
       }
 
-      // ✅ FIX: Add timeout to prevent hang when network is slow/unavailable
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      ).timeout(
-        const Duration(seconds: 5),  // ⚡ OPTIMIZED: 5s timeout (was 10s)
-        onTimeout: () {
-          if (kDebugMode) print('⏱️ Request timeout for workstation orders');
-          throw Exception('Request timeout');
-        },
-      );
+      // ✅ FIX: Add retry mechanism and increased timeout
+      int retryCount = 0;
+      const int maxRetries = 3;
+      Exception? lastException;
 
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
+      while (retryCount < maxRetries) {
+        try {
+          final response = await http.get(
+            Uri.parse(url),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          ).timeout(
+            const Duration(seconds: 30), // ⚡ OPTIMIZED: 30s timeout (was 15s)
+            onTimeout: () {
+              throw Exception('Request timeout');
+            },
+          );
 
-        if (data['success'] == true && data['data'] != null) {
-          List<dynamic> ordersData = data['data'];
+          if (response.statusCode == 200) {
+            final Map<String, dynamic> data = json.decode(response.body);
 
-          if (kDebugMode) {
-            print('✅ Received ${ordersData.length} orders for $workstationType');
-            print('   Query time: ${data['meta']?['queryTime']}');
+            if (data['success'] == true && data['data'] != null) {
+              List<dynamic> ordersData = data['data'];
+
+              if (kDebugMode) {
+                print('✅ Received ${ordersData.length} orders for $workstationType');
+                print('   Query time: ${data['meta']?['queryTime']}');
+              }
+
+              return ordersData.map((orderJson) => Order.fromJson(orderJson)).toList();
+            } else {
+              throw Exception('Invalid response format');
+            }
+          } else {
+            throw Exception('Failed to load workstation orders: ${response.statusCode}');
           }
-
-          return ordersData.map((orderJson) => Order.fromJson(orderJson)).toList();
-        } else {
-          throw Exception('Invalid response format');
+        } catch (e) {
+          lastException = e as Exception;
+          retryCount++;
+          if (kDebugMode) {
+            print('⚠️ Attempt $retryCount failed: $e');
+          }
+          if (retryCount >= maxRetries) break;
+          // Wait before retrying (exponential backoff: 1s, 2s, 3s)
+          await Future.delayed(Duration(seconds: retryCount));
         }
-      } else {
-        throw Exception('Failed to load workstation orders: ${response.statusCode}');
       }
+
+      throw lastException ?? Exception('Failed to fetch workstation orders after $maxRetries attempts');
     } catch (e) {
       if (kDebugMode) {
         print('❌ Error fetching workstation orders: $e');

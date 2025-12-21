@@ -128,7 +128,7 @@ class MenuService {
 
       final response = await http.get(
         Uri.parse(url),
-      ).timeout(Duration(seconds: 10));
+      ).timeout(Duration(seconds: 30));
 
       print('Categories Response Status: ${response.statusCode}');
 
@@ -176,7 +176,7 @@ class MenuService {
 
       final response = await http.get(
         Uri.parse(url),
-      ).timeout(Duration(seconds: 10));
+      ).timeout(Duration(seconds: 30));
 
       print('Outlets Response Status: ${response.statusCode}');
 
@@ -225,7 +225,7 @@ class MenuService {
 
       final response = await http.get(
         Uri.parse(url),
-      ).timeout(Duration(seconds: 10));
+      ).timeout(Duration(seconds: 30));
 
       print('Products Response Status: ${response.statusCode}');
 
@@ -276,7 +276,7 @@ class MenuService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: json.encode(menuItem.toJson()),
-      ).timeout(Duration(seconds: 15));
+      ).timeout(Duration(seconds: 30));
 
       print('Create Menu Response Status: ${response.statusCode}');
       print('Create Menu Response Body: ${response.body}');
@@ -335,7 +335,7 @@ class MenuService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: json.encode(body),
-      ).timeout(Duration(seconds: 15));
+      ).timeout(Duration(seconds: 30));
 
       print('Create Recipe Response Status: ${response.statusCode}');
       print('Create Recipe Response Body: ${response.body}');
@@ -365,7 +365,7 @@ class MenuService {
 
       final response = await http.get(
         Uri.parse(url),
-      ).timeout(Duration(seconds: 10));
+      ).timeout(Duration(seconds: 30));
 
       print('Recipe Response Status: ${response.statusCode}');
 
@@ -423,7 +423,7 @@ class MenuService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: json.encode(body),
-      ).timeout(Duration(seconds: 15));
+      ).timeout(Duration(seconds: 30));
 
       print('Update Recipe Response Status: ${response.statusCode}');
       print('Update Recipe Response Body: ${response.body}');

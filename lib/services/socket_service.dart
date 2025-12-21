@@ -189,32 +189,28 @@ class SocketService {
         print('╚════════════════════════════════════════════════╝');
       }
 
-      // ⚡ OPTIMIZED: Just trigger callback immediately
-      // Dashboard will handle refresh, no blocking HTTP call here
-      if (onNewOrder != null) {
+      // ⚡ OPTIMIZED: Parse FULL order and update immediately
+      // This avoids calling the slow API refresh
+      if (onNewOrder != null && data != null) {
         try {
-          // Quick refresh using cached device context
-          // This triggers _refreshOrders which handles everything
+          final orderData = Map<String, dynamic>.from(data);
+          
+          // Ensure we have minimal required fields
+          if (!orderData.containsKey('status')) {
+             orderData['status'] = 'Waiting';
+          }
+          
+          final newOrder = Order.fromJson(orderData);
+          onNewOrder(newOrder);
+          
+          if (kDebugMode) {
+             print('✅ Parsed new order: ${newOrder.orderId} with ${newOrder.items.length} items');
+          }
+        } catch (e) {
+          if (kDebugMode) print('⚠️ Error parsing new order from socket: $e');
+          // Fallback: trigger refresh with minimal data if parsing fails
           onNewOrder(Order(
             orderId: data?['orderId'] ?? data?['order_id'] ?? 'unknown',
-            name: data?['customerName'] ?? 'New Order',
-            table: data?['tableNumber'] ?? '',
-            status: 'Waiting',
-            items: [],
-            createdAt: DateTime.now(),
-            updatedAt: DateTime.now(),
-            createdAtWIB: DateTime.now(),
-            updatedAtWIB: DateTime.now(),
-            service: data?['orderType'] ?? 'Dine-In',
-            orderType: data?['orderType'] ?? 'dine-in',
-            source: data?['source'] ?? 'Cashier',
-            paymentMethod: 'Cash',
-          ));
-        } catch (e) {
-          if (kDebugMode) print('⚠️ Error in new order callback: $e');
-          // Fallback: still notify even with minimal data
-          onNewOrder(Order(
-            orderId: 'unknown',
             name: 'New Order',
             table: '',
             status: 'Waiting',

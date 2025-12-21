@@ -21,7 +21,7 @@ class StockMenuService {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true',
         },
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 30));
 
       if (menuItemsResponse.statusCode != 200) {
         throw Exception(
@@ -51,7 +51,7 @@ class StockMenuService {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true',
         },
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 30));
 
       if (stockResponse.statusCode != 200) {
         throw Exception(
@@ -92,7 +92,7 @@ class StockMenuService {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true',
         },
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 30));
 
       if (menuItemsResponse.statusCode != 200) {
         throw Exception(
@@ -158,7 +158,7 @@ class StockMenuService {
       final menuItemsResponse = await http.get(
         Uri.parse('$baseUrl/api/menu/all-menu-items-backoffice'),
         headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 30));
 
       if (menuItemsResponse.statusCode != 200) {
         throw Exception(
@@ -184,7 +184,7 @@ class StockMenuService {
       final stockResponse = await http.get(
         Uri.parse('$baseUrl/api/product/menu-stock/manual-stock'),
         headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 30));
 
       if (stockResponse.statusCode != 200) {
         throw Exception('Failed to load stock: ${stockResponse.statusCode}');
@@ -255,7 +255,7 @@ class StockMenuService {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true',
         },
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 30));
 
       if (menuItemsResponse.statusCode != 200) {
         throw Exception(
@@ -304,7 +304,7 @@ class StockMenuService {
       final stockResponse = await http.get(
         Uri.parse('$baseUrl/api/product/menu-stock/manual-stock'),
         headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 30));
 
       if (stockResponse.statusCode != 200) {
         throw Exception(
@@ -406,7 +406,7 @@ class StockMenuService {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true',
         },
-      ).timeout(const Duration(seconds: 10));  // 10s timeout for complete data
+      ).timeout(const Duration(seconds: 30));  // 30s timeout for complete data
 
       if (response.statusCode != 200) {
         throw Exception('Failed to load workstation data: ${response.statusCode}');
