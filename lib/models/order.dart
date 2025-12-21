@@ -174,6 +174,9 @@ class Order {
   final String? servingOption;
   final DateTime? foodServingTime;
 
+  // ✅ New field for custom amount items
+  final List<Map<String, dynamic>>? customAmountItems;
+
   Order({
     this.orderId,
     required this.name,
@@ -199,6 +202,7 @@ class Order {
     this.userId,
     this.servingOption,
     this.foodServingTime,
+    this.customAmountItems,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -395,6 +399,9 @@ class Order {
       userId: json['user_id']?.toString(),
       servingOption: servingOption,
       foodServingTime: foodServingTime,
+      customAmountItems: json['customAmountItems'] != null
+          ? List<Map<String, dynamic>>.from(json['customAmountItems'])
+          : null,
     );
   }
 
@@ -691,6 +698,7 @@ class Order {
     String? userId,
     String? servingOption,
     DateTime? foodServingTime,
+    List<Map<String, dynamic>>? customAmountItems,
   }) {
     return Order(
       orderId: orderId ?? this.orderId,
@@ -717,6 +725,7 @@ class Order {
       userId: userId ?? this.userId,
       servingOption: servingOption ?? this.servingOption,
       foodServingTime: foodServingTime ?? this.foodServingTime,
+      customAmountItems: customAmountItems ?? this.customAmountItems,
     );
   }
 }

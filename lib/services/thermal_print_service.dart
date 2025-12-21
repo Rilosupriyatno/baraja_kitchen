@@ -770,6 +770,18 @@ class ThermalPrintService {
       printer.feed(1);
     }
 
+    // ✅ Custom Amount Items
+    if (order.customAmountItems != null && order.customAmountItems!.isNotEmpty) {
+      for (var custom in order.customAmountItems!) {
+        printer.row([
+          PosColumn(text: 'CA', width: 1, styles: const PosStyles(align: PosAlign.left, bold: true, underline: true)),
+          PosColumn(text: custom['name'] ?? 'Custom Amount', width: 8, styles: const PosStyles(align: PosAlign.left)),
+          PosColumn(text: '', width: 3, styles: const PosStyles(align: PosAlign.right)),
+        ]);
+        printer.feed(1);
+      }
+    }
+
     printer.hr();
 
     // Footer - Selesai
@@ -929,6 +941,18 @@ class ThermalPrintService {
       }
 
       bytes.addAll(generator.feed(1));
+    }
+
+    // ✅ Custom Amount Items
+    if (order.customAmountItems != null && order.customAmountItems!.isNotEmpty) {
+      for (var custom in order.customAmountItems!) {
+        bytes.addAll(generator.row([
+          PosColumn(text: 'CA', width: 1, styles: const PosStyles(align: PosAlign.left, bold: true, underline: true)),
+          PosColumn(text: custom['name'] ?? 'Custom Amount', width: 8, styles: const PosStyles(align: PosAlign.left)),
+          PosColumn(text: '', width: 3, styles: const PosStyles(align: PosAlign.right)),
+        ]));
+        bytes.addAll(generator.feed(1));
+      }
     }
 
     bytes.addAll(generator.hr());
