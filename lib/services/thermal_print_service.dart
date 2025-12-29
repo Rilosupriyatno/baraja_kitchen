@@ -727,7 +727,13 @@ class ThermalPrintService {
             String label = '';
 
             if (addon['options'] != null) {
-              if (addon['options'] is Map) {
+              if (addon['options'] is List && (addon['options'] as List).isNotEmpty) {
+                // Options adalah List - ambil semua label
+                label = (addon['options'] as List)
+                    .map((opt) => opt['label'] ?? '')
+                    .where((l) => l.toString().isNotEmpty)
+                    .join(', ');
+              } else if (addon['options'] is Map) {
                 label = addon['options']['label'] ?? addon['options']['name'] ?? '';
               } else if (addon['options'] is String) {
                 label = addon['options'];
@@ -903,7 +909,13 @@ class ThermalPrintService {
           String label = '';
 
           if (addon['options'] != null) {
-            if (addon['options'] is Map) {
+            if (addon['options'] is List && (addon['options'] as List).isNotEmpty) {
+              // Options adalah List - ambil semua label
+              label = (addon['options'] as List)
+                  .map((opt) => opt['label'] ?? '')
+                  .where((l) => l.toString().isNotEmpty)
+                  .join(', ');
+            } else if (addon['options'] is Map) {
               label = addon['options']['label'] ?? addon['options']['name'] ?? '';
             } else if (addon['options'] is String) {
               label = addon['options'];
@@ -968,7 +980,7 @@ class ThermalPrintService {
   }
 
   // ============================================
-  // MANUAL PRINT (ALL ITEMS)
+  // MANUAL PRINT (ALL ITEMS) - OPTIMIZED
   // ============================================
   Future<bool> manualPrint(Order order) async {
     final workstation = _workstationType;
@@ -977,64 +989,88 @@ class ThermalPrintService {
       'info': printerInfo,
     };
 
-    // ✅ OPTIMIZED: Process stock checks and logging in PARALLEL
-    final logIdFutures = order.items.map((item) async {
+    final startTime = DateTime.now();
+
+    // ⚡ OPTIMIZED: Print FIRST, log in background
+    // This eliminates delay caused by waiting for API calls before printing
+    try {
+      final success = await printOrder(order);
+      final duration = DateTime.now().difference(startTime).inMilliseconds;
+
+      // 🔥 FIRE-AND-FORGET: Log in background after print completes
+      // Don't block UI waiting for logging
+      _logPrintInBackground(order, workstation, printerConfig, success, duration);
+
+      return success;
+    } catch (e) {
+      // Log error in background
+      _logPrintErrorInBackground(order, workstation, printerConfig, e.toString());
+      rethrow;
+    }
+  }
+
+  // Helper: Background logging for manual print
+  void _logPrintInBackground(
+    Order order,
+    String workstation,
+    Map<String, dynamic> printerConfig,
+    bool success,
+    int duration,
+  ) {
+    Future(() async {
       try {
-        final stockInfo = await _checkItemStock(item);
-        return await PrintTrackingService().logPrintAttempt(
+        for (final item in order.items) {
+          final logId = await PrintTrackingService().logPrintAttempt(
             order.orderId!,
             _convertOrderItemToMap(item),
             workstation,
             printerConfig,
-            stockInfo
-        );
+            await _getFallbackStockInfo(item),
+          );
+
+          if (logId != null) {
+            if (success) {
+              await PrintTrackingService().logPrintSuccess(logId, duration, wasProblematic: false);
+            } else {
+              await PrintTrackingService().logPrintFailure(logId, 'print_failed', 'Manual print gagal');
+            }
+          }
+        }
+        if (kDebugMode) print('✅ [BACKGROUND] Print logging completed for ${order.orderId}');
       } catch (e) {
-        if (kDebugMode) print('⚠️ Failed to log print attempt: $e');
-        return null;
+        if (kDebugMode) print('⚠️ [BACKGROUND] Failed to log print: $e');
       }
-    }).toList();
-
-    final results = await Future.wait(logIdFutures);
-    final List<String> logIds = results.whereType<String>().toList();
-
-    final startTime = DateTime.now();
-
-    try {
-      final success = await printOrder(order);
-
-      if (success) {
-        try {
-          final duration = DateTime.now().difference(startTime).inMilliseconds;
-          for (final logId in logIds) {
-            await PrintTrackingService().logPrintSuccess(logId, duration, wasProblematic: false);
-          }
-        } catch (e) {
-          if (kDebugMode) print('⚠️ Failed to log success: $e');
-        }
-      } else {
-        try {
-          for (final logId in logIds) {
-            await PrintTrackingService().logPrintFailure(
-                logId, 'printer_not_configured', 'Manual print gagal'
-            );
-          }
-        } catch (e) {
-          if (kDebugMode) print('⚠️ Failed to log failure: $e');
-        }
-      }
-
-      return success;
-    } catch (e) {
-      try {
-        for (final logId in logIds) {
-          await PrintTrackingService().logPrintFailure(logId, 'unknown_error', e.toString());
-        }
-      } catch (e2) {
-        if (kDebugMode) print('⚠️ Failed to log error: $e2');
-      }
-      rethrow;
-    }
+    });
   }
+
+  // Helper: Background error logging for manual print
+  void _logPrintErrorInBackground(
+    Order order,
+    String workstation,
+    Map<String, dynamic> printerConfig,
+    String errorMessage,
+  ) {
+    Future(() async {
+      try {
+        for (final item in order.items) {
+          final logId = await PrintTrackingService().logPrintAttempt(
+            order.orderId!,
+            _convertOrderItemToMap(item),
+            workstation,
+            printerConfig,
+            await _getFallbackStockInfo(item),
+          );
+
+          if (logId != null) {
+            await PrintTrackingService().logPrintFailure(logId, 'unknown_error', errorMessage);
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) print('⚠️ [BACKGROUND] Failed to log error: $e');
+      }
+    });
+  }
+
 
   /// @deprecated This function prints the ENTIRE order.
   /// Use autoPrintOrder() for auto-printing new items only.
@@ -1227,7 +1263,13 @@ class ThermalPrintService {
             String label = '';
 
             if (addon['options'] != null) {
-              if (addon['options'] is Map) {
+              if (addon['options'] is List && (addon['options'] as List).isNotEmpty) {
+                // Options adalah List - ambil semua label
+                label = (addon['options'] as List)
+                    .map((opt) => opt['label'] ?? '')
+                    .where((l) => l.toString().isNotEmpty)
+                    .join(', ');
+              } else if (addon['options'] is Map) {
                 label = addon['options']['label'] ?? addon['options']['name'] ?? '';
               } else if (addon['options'] is String) {
                 label = addon['options'];
@@ -1369,7 +1411,13 @@ class ThermalPrintService {
           String label = '';
 
           if (addon['options'] != null) {
-            if (addon['options'] is Map) {
+            if (addon['options'] is List && (addon['options'] as List).isNotEmpty) {
+              // Options adalah List - ambil semua label
+              label = (addon['options'] as List)
+                  .map((opt) => opt['label'] ?? '')
+                  .where((l) => l.toString().isNotEmpty)
+                  .join(', ');
+            } else if (addon['options'] is Map) {
               label = addon['options']['label'] ?? addon['options']['name'] ?? '';
             } else if (addon['options'] is String) {
               label = addon['options'];

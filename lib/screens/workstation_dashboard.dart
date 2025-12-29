@@ -626,7 +626,41 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
 
       if (workstationItems.isEmpty) return;
 
-      for (final item in workstationItems) {
+      // ✅ FIX 1: Filter out items that have already been displayed/printed
+      // This prevents duplicate prints from race conditions or reconnections
+      final newItems = workstationItems.where((item) {
+        return !_displayedItemIds.contains(item.itemId);
+      }).toList();
+
+      if (newItems.isEmpty) {
+        if (kDebugMode) {
+          print('⏭️ [IMMEDIATE PRINT] All items already printed for $orderId, skipping...');
+        }
+        return;
+      }
+
+      // ✅ FIX 2: Detect open bill - use backend flag as priority, fallback to local detection
+      bool isOpenBill = printData['isOpenBill'] == true;  // From backend
+      
+      // Fallback: check if order already exists in preparing with items
+      if (!isOpenBill) {
+        final existingOrderInPreparing = preparing.where((o) => o.orderId == orderId).toList();
+        if (existingOrderInPreparing.isNotEmpty) {
+          final existingItems = existingOrderInPreparing.first.items;
+          if (existingItems.isNotEmpty) {
+            isOpenBill = true;
+            if (kDebugMode) {
+              print('📝 [OPEN BILL DETECTED] Order $orderId already has ${existingItems.length} items in preparing');
+              print('   New items to print: ${newItems.length}');
+            }
+          }
+        }
+      } else if (kDebugMode) {
+        print('📝 [OPEN BILL] Backend flagged order $orderId as open bill');
+      }
+
+      // Mark new items as displayed
+      for (final item in newItems) {
         _displayedItemIds.add(item.itemId);
       }
 
@@ -679,7 +713,7 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
         name: customerName,
         table: customerTable,
         status: 'OnProcess',
-        items: workstationItems,
+        items: newItems,  // ✅ Use filtered new items only
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
         createdAtWIB: DateTime.now(),
@@ -691,7 +725,8 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
         cashierName: cashierName.isNotEmpty ? cashierName : null,
       );
 
-      _printService.autoPrintOrder(tempOrder, isOpenBill: false).then((printed) {
+      // ✅ FIX 3: Pass correct isOpenBill flag
+      _printService.autoPrintOrder(tempOrder, isOpenBill: isOpenBill).then((printed) {
         if (printed && mounted) {
           _showPrintSuccessSnackbar(orderId);
         }
@@ -1435,6 +1470,16 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
     );
   }
 
+  String _formatOrderDateTime(DateTime? dateTime) {
+    if (dateTime == null) return '-';
+    final day = dateTime.day.toString().padLeft(2, '0');
+    final month = dateTime.month.toString().padLeft(2, '0');
+    final year = dateTime.year.toString();
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    return '$day/$month/$year, $hour:$minute';
+  }
+
   List<Order> _getFilteredOrders(List<Order> orders) {
     if (search.isEmpty) return orders;
     final searchLower = search.toLowerCase();
@@ -1464,8 +1509,30 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
       builder: (context, constraints) {
         final isTablet = constraints.maxWidth >= 900;
         
-        // Tablet: 3-column layout
+        // Tablet: 3-column layout (Sidebar is already in parent)
+        // Column 2: Order info cards | Column 3: Order items detail
         if (isTablet) {
+          // Auto-select first order if none selected
+          if (_selectedOrderId == null && filteredOrders.isNotEmpty) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(() {
+                  _selectedOrderId = filteredOrders.first.orderId;
+                });
+              }
+            });
+          }
+          
+          Order? selectedOrder;
+          int? selectedIndex;
+          
+          if (_selectedOrderId != null) {
+            selectedIndex = filteredOrders.indexWhere((o) => o.orderId == _selectedOrderId);
+            if (selectedIndex != -1) {
+              selectedOrder = filteredOrders[selectedIndex];
+            }
+          }
+          
           return SafeArea(
             top: false,
             left: false,
@@ -1475,45 +1542,233 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
               color: Colors.white,
               child: Row(
                 children: [
-                  // Column 1: Order List - Full height with header at top
+                  // ============ KOLOM 2: Order Info Cards ============
                   SizedBox(
-                    width: 400,
+                    width: 360,
                     child: Container(
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        border: Border(
+                          right: BorderSide(color: Colors.grey.shade200, width: 1),
+                        ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Padding(
+                          // Header
+                          Container(
                             padding: const EdgeInsets.all(16),
-                            child: Text(
-                              '${filteredOrders.length} Orders',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black87,
-                              ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+                            ),
+                            child: Row(
+                              children: [
+                                Text(
+                                  '${filteredOrders.length} Pesanan',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
+                          // Order Cards List
                           Expanded(
                             child: ListView.builder(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              padding: const EdgeInsets.all(12),
                               itemCount: filteredOrders.length,
                               itemBuilder: (context, index) {
                                 final order = filteredOrders[index];
                                 final isSelected = _selectedOrderId == order.orderId;
+                                final queueNum = showTimer && !isFinished ? index + 1 : index + 1;
                                 
-                                return OrderListItem(
-                                  order: order,
-                                  queueNumber: showTimer && !isFinished ? index + 1 : index + 1,
-                                  isSelected: isSelected,
+                                return GestureDetector(
                                   onTap: () {
                                     setState(() {
                                       _selectedOrderId = order.orderId;
                                     });
                                   },
-                                  brandColor: brandColor,
+                                  child: Container(
+                                    margin: const EdgeInsets.only(bottom: 10),
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? brandColor.withOpacity(0.08) : Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isSelected ? brandColor : Colors.grey.shade200,
+                                        width: isSelected ? 2 : 1,
+                                      ),
+                                      boxShadow: isSelected ? [
+                                        BoxShadow(
+                                          color: brandColor.withOpacity(0.15),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ] : [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.04),
+                                          blurRadius: 4,
+                                          offset: const Offset(0, 1),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        // Row 1: Queue Number & Order ID
+                                        Row(
+                                          children: [
+                                            // Queue Number Badge
+                                            Container(
+                                              width: 36,
+                                              height: 36,
+                                              decoration: BoxDecoration(
+                                                color: isSelected ? brandColor : Colors.grey.shade600,
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Center(
+                                                child: Text(
+                                                  '$queueNum',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            // Order ID
+                                            Expanded(
+                                              child: Text(
+                                                order.orderId ?? 'N/A',
+                                                style: TextStyle(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: isSelected ? brandColor : Colors.black87,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            // Order Type Badge
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: brandColor.withOpacity(0.1),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: Text(
+                                                order.service,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: brandColor,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 10),
+                                        // Divider
+                                        Divider(height: 1, color: Colors.grey.shade200),
+                                        const SizedBox(height: 10),
+                                        // Row 2: Kasir
+                                        Row(
+                                          children: [
+                                            Icon(Icons.person_outline, size: 14, color: Colors.grey.shade600),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Kasir: ',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                            Expanded(
+                                              child: Text(
+                                                order.cashierName ?? 'System',
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.black87,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+                                        // Row 3: Tanggal & Jam
+                                        Row(
+                                          children: [
+                                            Icon(Icons.access_time, size: 14, color: Colors.grey.shade600),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              _formatOrderDateTime(order.createdAtWIB ?? order.createdAt),
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey.shade700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+                                        // Row 4: Customer Name
+                                        Row(
+                                          children: [
+                                            Icon(Icons.account_circle, size: 14, color: Colors.grey.shade600),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Customer: ',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                            Expanded(
+                                              child: Text(
+                                                order.name,
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Colors.black87,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            // Table if exists
+                                            if (order.table.isNotEmpty) ...[
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: brandColor.withOpacity(0.1),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Icon(Icons.table_restaurant, size: 12, color: brandColor),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      order.table,
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: brandColor,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 );
                               },
                             ),
@@ -1522,71 +1777,40 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
                       ),
                     ),
                   ),
-                  // Divider between List and Detail
-                  VerticalDivider(
-                    width: 1,
-                    thickness: 1,
-                    color: Colors.grey.shade200,
-                  ),
-                  // Column 2: Detail Panel - Full height with header at top
+                  // ============ KOLOM 3: Order Items Detail ============
                   Expanded(
                     child: Container(
                       color: Colors.white,
-                      child: Builder(
-                        builder: (context) {
-                          // Auto-select first order if none selected
-                          if (_selectedOrderId == null && filteredOrders.isNotEmpty) {
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (mounted) {
-                                setState(() {
-                                  _selectedOrderId = filteredOrders.first.orderId;
-                                });
+                      child: OrderDetailPanel(
+                        order: selectedOrder,
+                        queueNumber: showTimer && !isFinished && selectedIndex != null && selectedIndex != -1
+                            ? selectedIndex + 1
+                            : null,
+                        brandColor: brandColor,
+                        showTimer: showTimer && !isFinished,
+                        onComplete: showTimer && !isFinished && selectedOrder != null
+                            ? () => _completeOrder(selectedOrder!)
+                            : null,
+                        onReprint: selectedOrder != null
+                            ? () async {
+                                final success = await _printService.manualPrint(selectedOrder!);
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Row(
+                                        children: [
+                                          Icon(success ? Icons.check_circle : Icons.error, color: Colors.white),
+                                          const SizedBox(width: 8),
+                                          Text(success ? 'Berhasil print ulang' : 'Gagal print, cek koneksi printer'),
+                                        ],
+                                      ),
+                                      backgroundColor: success ? brandColor : Colors.red,
+                                      duration: const Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
                               }
-                            });
-                          }
-                          
-                          Order? selectedOrder;
-                          int? selectedIndex;
-                          
-                          if (_selectedOrderId != null) {
-                            selectedIndex = filteredOrders.indexWhere((o) => o.orderId == _selectedOrderId);
-                            if (selectedIndex != -1) {
-                              selectedOrder = filteredOrders[selectedIndex];
-                            }
-                          }
-                          
-                          return OrderDetailPanel(
-                            order: selectedOrder,
-                            queueNumber: showTimer && !isFinished && selectedIndex != null && selectedIndex != -1
-                                ? selectedIndex + 1
-                                : null,
-                            brandColor: brandColor,
-                            showTimer: showTimer && !isFinished,
-                            onComplete: showTimer && !isFinished && selectedOrder != null
-                                ? () => _completeOrder(selectedOrder!)
-                                : null,
-                            onReprint: selectedOrder != null
-                                ? () async {
-                                    final success = await _printService.manualPrint(selectedOrder!);
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Row(
-                                            children: [
-                                              Icon(success ? Icons.check_circle : Icons.error, color: Colors.white),
-                                              const SizedBox(width: 8),
-                                              Text(success ? 'Berhasil print ulang' : 'Gagal print, cek koneksi printer'),
-                                            ],
-                                          ),
-                                          backgroundColor: success ? brandColor : Colors.red,
-                                          duration: const Duration(seconds: 2),
-                                        ),
-                                      );
-                                    }
-                                  }
-                                : null,
-                          );
-                        },
+                            : null,
                       ),
                     ),
                   ),

@@ -7,12 +7,20 @@ import 'screens/device_selection_screen.dart';
 import 'config/app_theme.dart';
 import 'services/background_service.dart';
 
-void main() {
+void main() async {
   // Ensure binding is initialized synchronously
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Don't wait for anything else in main()
-  // Just run the app immediately to clear the native splash screen
+  // Load dotenv BEFORE runApp to prevent NotInitializedError
+  // when DeviceService tries to access BASE_URL
+  try {
+    await dotenv.load(fileName: ".env");
+    debugPrint('✅ Dotenv loaded in main()');
+  } catch (e) {
+    debugPrint('⚠️ Dotenv load error in main(): $e');
+  }
+  
+  // Now run the app - dotenv is guaranteed to be loaded
   runApp(const BarajaKitchenApp());
 }
 
@@ -30,9 +38,9 @@ class _BarajaKitchenAppState extends State<BarajaKitchenApp> {
   @override
   void initState() {
     super.initState();
-    // Use a slight delay to allow the rendering engine to settle
-    // before running potentially heavy initialization
-    Future.delayed(const Duration(milliseconds: 1500), () {
+    // Short delay just to let the first frame render
+    // dotenv is already loaded in main() so no waiting needed
+    Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) {
         _initializeApp();
       }
@@ -43,11 +51,9 @@ class _BarajaKitchenAppState extends State<BarajaKitchenApp> {
     debugPrint('🚀 Starting App Initialization...');
     
     try {
-      // 1. Load env vars
-      await dotenv.load(fileName: ".env");
-      debugPrint('✅ Dotenv loaded');
-
-      // 2. Keep screen on
+      // dotenv already loaded in main() before runApp()
+      
+      // 1. Keep screen on
       try {
         KeepScreenOn.turnOn();
         debugPrint('✅ KeepScreenOn enabled');
@@ -55,11 +61,11 @@ class _BarajaKitchenAppState extends State<BarajaKitchenApp> {
         debugPrint('⚠️ KeepScreenOn error: $e');
       }
 
-      // 3. Request permissions
+      // 2. Request permissions
       await _requestNotificationPermission();
       debugPrint('✅ Permissions requested');
 
-      // 4. Init background service
+      // 3. Init background service
       BackgroundService.initialize().then((_) {
         debugPrint('✅ Background service initialized');
       }).catchError((e) {
