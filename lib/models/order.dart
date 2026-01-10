@@ -176,6 +176,9 @@ class Order {
 
   // ✅ New field for custom amount items
   final List<Map<String, dynamic>>? customAmountItems;
+  
+  // ✅ New field for open bill status
+  final bool isOpenBill;
 
   Order({
     this.orderId,
@@ -203,6 +206,7 @@ class Order {
     this.servingOption,
     this.foodServingTime,
     this.customAmountItems,
+    this.isOpenBill = false,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
@@ -402,6 +406,7 @@ class Order {
       customAmountItems: json['customAmountItems'] != null
           ? List<Map<String, dynamic>>.from(json['customAmountItems'])
           : null,
+      isOpenBill: json['isOpenBill'] ?? false,
     );
   }
 
@@ -699,6 +704,7 @@ class Order {
     String? servingOption,
     DateTime? foodServingTime,
     List<Map<String, dynamic>>? customAmountItems,
+    bool? isOpenBill,
   }) {
     return Order(
       orderId: orderId ?? this.orderId,
@@ -726,6 +732,7 @@ class Order {
       servingOption: servingOption ?? this.servingOption,
       foodServingTime: foodServingTime ?? this.foodServingTime,
       customAmountItems: customAmountItems ?? this.customAmountItems,
+      isOpenBill: isOpenBill ?? this.isOpenBill,
     );
   }
 }

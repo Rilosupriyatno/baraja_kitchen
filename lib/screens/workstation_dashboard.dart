@@ -586,6 +586,7 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
         if (kDebugMode) {
           print('✅ [${widget.selectedDevice.deviceName}] Device ID MATCH for $orderId');
           print('   Backend explicitly sent to this device');
+          print('   isOpenBill: ${printData['isOpenBill']}');
         }
       }
 
@@ -724,6 +725,15 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
         paymentMethod: printData['paymentMethod'] ?? 'Cash',
         cashierName: cashierName.isNotEmpty ? cashierName : null,
       );
+
+      // ✅ FIX: BAR WORKSTATION LOGIC
+      // Only print if isOpenBill is true. If isOpenBill is false, do NOT print.
+      if (widget.selectedDevice.workstationTypeString.toLowerCase() == 'bar' && !isOpenBill) {
+        if (kDebugMode) {
+          print('🚫 [BAR RESTRICTION] Skipping print for order $orderId because isOpenBill is false');
+        }
+        return;
+      }
 
       // ✅ FIX 3: Pass correct isOpenBill flag
       _printService.autoPrintOrder(tempOrder, isOpenBill: isOpenBill).then((printed) {
@@ -1240,7 +1250,23 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
       }
 
       if (newItems.isNotEmpty && _autoPrintEnabled && _printService.isConfigured) {
-        final isOpenBill = order.items.length > newItems.length;
+        // ✅ FIX: Determine if this is an open bill/additional order
+        // 1. Check if backend explicitly flagged it as open bill
+        // 2. fallback: check if we have more items locally than new items (indicating addition)
+        final isLocalAddition = order.items.length > newItems.length;
+        final isEffectiveOpenBill = order.isOpenBill || isLocalAddition;
+
+        // ✅ BAR WORKSTATION RESTRICTION
+        // If this is a Bar workstation, ONLY print if it's an Open Bill (or addition).
+        // Regular confirmed orders should NOT auto-print (they print at cashier/kitchen).
+        if (widget.selectedDevice.workstationTypeString.toLowerCase() == 'bar') {
+          if (!isEffectiveOpenBill) {
+             if (kDebugMode) {
+               print('🚫 [BAR QUEUE] Skipping auto-print for ${order.orderId} because isOpenBill is false');
+             }
+             continue;
+          }
+        }
         
         final tempOrder = Order(
           orderId: order.orderId,
@@ -1259,9 +1285,10 @@ class _WorkstationDashboardState extends State<WorkstationDashboard> with Widget
           source: order.source,
           paymentMethod: order.paymentMethod,
           cashierName: order.cashierName,
+          // Propagate isOpenBill to temp order if needed, or just use flag below
         );
         
-        ordersToPrint.add((tempOrder, newItems, isOpenBill));
+        ordersToPrint.add((tempOrder, newItems, isEffectiveOpenBill));
       }
     }
     
