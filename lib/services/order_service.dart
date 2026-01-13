@@ -281,7 +281,7 @@ class OrderService {
         print('   Difference: $diffInMinutes minutes');
       }
 
-      return diffInMinutes <= 30 && diffInMinutes >= -60;
+      return diffInMinutes <= 60 && diffInMinutes >= -60;
     } else {
       return _checkImmediatePreparation(order, now);
     }
@@ -298,7 +298,7 @@ class OrderService {
       print('   Difference: $diffInMinutes minutes');
     }
 
-    return diffInMinutes <= 30 && diffInMinutes >= -60;
+    return diffInMinutes <= 60 && diffInMinutes >= -60;
   }
 
   // ✅ NEW: Refresh orders using Device object

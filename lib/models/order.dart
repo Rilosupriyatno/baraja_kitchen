@@ -300,10 +300,16 @@ class Order {
         servingOption =
             reservation['food_serving_option']?.toString() ?? 'immediate';
 
-        // 🆕 Parse food serving time
+        // 🆕 Parse food serving time - ✅ FIX: Strip timezone to treat as local time (WIB)
         if (reservation['food_serving_time'] != null) {
           try {
-            foodServingTime = DateTime.parse(reservation['food_serving_time']);
+            String timeStr = reservation['food_serving_time'].toString();
+            // Strip timezone suffix to treat as local time
+            String cleanTimeStr = timeStr
+                .replaceAll(RegExp(r'\+\d{2}:\d{2}$'), '')
+                .replaceAll(RegExp(r'-\d{2}:\d{2}$'), '')
+                .replaceAll('Z', '');
+            foodServingTime = DateTime.parse(cleanTimeStr);
           } catch (e) {
             // ignore parsing error
           }
@@ -472,10 +478,10 @@ class Order {
   // ✅ Updated helper untuk countdown reservasi dengan serving option
   String reservationCountdown() {
     if (servingOption == 'scheduled' && foodServingTime != null) {
-      // 🎯 SCHEDULED: Hitung berdasarkan food_serving_time - 30 menit
+      // 🎯 SCHEDULED: Hitung berdasarkan food_serving_time - 60 menit
       final now = DateTime.now();
       final prepStartTime = foodServingTime!.subtract(
-        const Duration(minutes: 30),
+        const Duration(minutes: 60),
       );
       final diff = prepStartTime.difference(now);
 
@@ -501,12 +507,12 @@ class Order {
         return 'Mulai prep dalam $minutes menit';
       }
     } else {
-      // ✅ IMMEDIATE: Hitung berdasarkan reservation_time - 30 menit (default)
+      // ✅ IMMEDIATE: Hitung berdasarkan reservation_time - 60 menit (default)
       if (reservationDateTime == null) return '-';
 
       final now = DateTime.now();
       final prepStartTime = reservationDateTime!.subtract(
-        const Duration(minutes: 30),
+        const Duration(minutes: 60),
       );
       final diff = prepStartTime.difference(now);
 
@@ -537,7 +543,7 @@ class Order {
   DateTime? get preparationStartTime {
     final target = targetServingTime;
     if (target == null) return null;
-    return target.subtract(const Duration(minutes: 30));
+    return target.subtract(const Duration(minutes: 60));
   }
 
   // 🆕 Helper untuk cek apakah sudah waktunya mulai persiapan
